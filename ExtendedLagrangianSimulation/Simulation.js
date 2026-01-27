@@ -3,28 +3,31 @@ class Simulation{
         this.particles = [];
         this.particleEmitters = [];
         this.shapes = [];
-        this.springs = new Map();
+        //this.springs = new Map();
 
+        this.PARTICLE_SIZE = 1;
+
+        this.INFLOW_VELOCITY = 5;
 
         this.AMOUNT_PARTICLES = 2000;
-        this.VELOCITY_DAMPING = 0.99;
-        this.GRAVITY = new Vector2(0.5,0);
-        this.REST_DENSITY = 10;
-        this.K_NEAR = 3;
-        this.K = 0.5;
-        this.INTERACTION_RADIUS = 25;
+        this.VELOCITY_DAMPING = 1;
+        this.GRAVITY = new Vector2(0,0);
+        this.REST_DENSITY = 0;
+        this.K_NEAR = 3.0;
+        this.K = 0.8;
+        this.INTERACTION_RADIUS = 14;
 
         // viscouse parameters
-        this.SIGMA = 0;
+        this.SIGMA = 0.1;
         this.BETA = 0;
 
         // plasticity parameters
         this.GAMMA = 0;
-        this.PLASTICITY = 0.9;
-        this.SPRING_STIFFNESS = 1;
+        this.PLASTICITY = 0;
+        this.SPRING_STIFFNESS = 0;
 
         //sticky parameters
-        this.MAXSTICKYDISTANCE = this.INTERACTION_RADIUS;
+        this.MAXSTICKYDISTANCE = this.INTERACTION_RADIUS*1.4;
         this.K_STICK = 0.1;
 
 
@@ -36,19 +39,19 @@ class Simulation{
         this.emitter = this.createParticleEmitter(
             new Vector2(0, canvas.height/2), // position
             new Vector2(1,0), // direction
-            350, // size
-            0.5,  // spawn interval
+            50, // size
+            //0.1,  // spawn interval
             50, // amount
-            25  // speed
+            this.INFLOW_VELOCITY  // speed
         );
 
-        let circle = new Circle(new Vector2(canvas.width/2,canvas.height/2), 75, "orange");
+        let circle = new Circle(new Vector2(canvas.width/2,canvas.height/2), this.PARTICLE_SIZE*25, "orange");
         this.shapes.push(circle);
 
     }
 
-    createParticleEmitter(position, direction, size, spawnInterval, amount, velocity){
-        let emitter = new ParticleEmitter(position, direction, size, spawnInterval, amount, velocity);
+    createParticleEmitter(position, direction, size, amount, velocity){
+        let emitter = new ParticleEmitter(position, direction, size, amount, velocity);
         this.particleEmitters.push(emitter);
         return emitter;
     }
@@ -98,9 +101,9 @@ class Simulation{
             this.emitter.rotate(0.01);
         }
 
-        this.applyGravity(dt);
+        this.inflowVelocityEnforcement();
 
-        //this.viscosity(dt);
+        this.viscosity(dt);
 
         this.predictPositions(dt);
 
@@ -115,7 +118,7 @@ class Simulation{
         this.computeNextVelocity(dt);
     }
 
-    handleStickyness(dt){
+    /*handleStickyness(dt){
         for(let i=0; i<this.particles.length; i++){
             let particle = this.particles[i];
             for (let j=0; j<this.shapes.length; j++){
@@ -129,7 +132,7 @@ class Simulation{
                 }
             }
         }
-    }
+    }*/
 
 
 
@@ -146,7 +149,7 @@ class Simulation{
         }
     }
 
-    adjustSprings(dt){
+    /*adjustSprings(dt){
         for(let i=0; i< this.particles.length; i++){
             let neighbours = this.fluidHashGrid.getNeighbourOfParticleIdx(i);
             let particleA = this.particles[i];
@@ -193,7 +196,7 @@ class Simulation{
         }
     }
 
-    springDisplacement(dt){
+    //springDisplacement(dt){
         let dtSquared = dt * dt;
 
         for(let [key, spring] of this.springs){
@@ -216,7 +219,7 @@ class Simulation{
             pi.position = Add(pi.position, rij);
             pj.position = Sub(pj.position, rij);
         }
-    }
+    }*/
 
     viscosity(dt){
         for(let i=0; i< this.particles.length; i++){
@@ -299,9 +302,14 @@ class Simulation{
         }
     }
 
-    applyGravity(dt){
-        for(let i=0; i< this.particles.length; i++){
-            this.particles[i].velocity = Add(this.particles[i].velocity, Scale(this.GRAVITY, dt));
+    inflowVelocityEnforcement(){
+        
+        const inletWidth = 50;
+
+        for(let i=0; i< this.particles.length; i++) {
+            if (this.particles[i].position.x < inletWidth) {
+            this.particles[i].velocity = new Vector2(this.INFLOW_VELOCITY, 0);
+            }
         }
     }
 
@@ -333,8 +341,10 @@ class Simulation{
                 this.particles[i].prevPosition.y = 0;
             }
             if(pos.x > canvas.width){
-                this.particles[i].position.x = canvas.width-1;
-                this.particles[i].prevPosition.x = canvas.width-1;
+                // remove particle that moved past the right edge
+                this.particles.splice(i, 1);
+                i--; // adjust index after removal
+                continue;
             }
             if(pos.y > canvas.height){
                 this.particles[i].position.y = canvas.height-1;
@@ -352,7 +362,7 @@ class Simulation{
         for(let i=0; i< this.particles.length; i++){
             let position = this.particles[i].position;
             let color = this.particles[i].color;
-            DrawUtils.drawPoint(position, 5, color);
+            DrawUtils.drawPoint(position, this.PARTICLE_SIZE, color);
         }
 
         for(let i=0; i< this.particleEmitters.length; i++){

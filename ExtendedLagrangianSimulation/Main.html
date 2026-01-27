@@ -9,7 +9,7 @@
     </head>
 
     <body>
-        <canvas id="canvas" width="1280px" height="720px" style="border: solid 1px black"></canvas>
+        <canvas id="canvas" width="625px" height="350px" style="border: solid 1px black"></canvas>
         <script src="Playground.js"></script>
         <script src="Simulation.js"></script>
         <script src="Vector2.js"></script>
@@ -27,7 +27,7 @@
             var ctx = canvas.getContext("2d");
 
             let lastTime = performance.now();
-            let currentTime = 60;
+            let currentTime = 0;
             let deltaTime = 0;
 
             let playground = new Playground();

@@ -5,7 +5,7 @@ class Simulation{
         this.shapes = [];
         //this.springs = new Map();
 
-        this.PARTICLE_SIZE = 1;
+        this.PARTICLE_SIZE = 3;
 
         this.INFLOW_VELOCITY = 5;
 
@@ -15,10 +15,10 @@ class Simulation{
         this.REST_DENSITY = 0;
         this.K_NEAR = 3.0;
         this.K = 0.8;
-        this.INTERACTION_RADIUS = 14;
+        this.INTERACTION_RADIUS = 5;
 
         // viscouse parameters
-        this.SIGMA = 0.1;
+        this.SIGMA = 0.2;
         this.BETA = 0;
 
         // plasticity parameters
@@ -39,19 +39,19 @@ class Simulation{
         this.emitter = this.createParticleEmitter(
             new Vector2(0, canvas.height/2), // position
             new Vector2(1,0), // direction
-            50, // size
-            //0.1,  // spawn interval
+            200, // size
+            0.5,  // spawn interval
             50, // amount
             this.INFLOW_VELOCITY  // speed
         );
 
-        let circle = new Circle(new Vector2(canvas.width/2,canvas.height/2), this.PARTICLE_SIZE*25, "orange");
+        let circle = new Circle(new Vector2(canvas.width/4,canvas.height/2), this.PARTICLE_SIZE*10, "orange");
         this.shapes.push(circle);
 
     }
 
-    createParticleEmitter(position, direction, size, amount, velocity){
-        let emitter = new ParticleEmitter(position, direction, size, amount, velocity);
+    createParticleEmitter(position, direction, size, spawnInterval, amount, velocity){
+        let emitter = new ParticleEmitter(position, direction, size, spawnInterval, amount, velocity);
         this.particleEmitters.push(emitter);
         return emitter;
     }
@@ -107,8 +107,6 @@ class Simulation{
 
         this.predictPositions(dt);
 
-        //this.adjustSprings(dt);
-        //this.springDisplacement(dt);
 
         this.doubleDensityRelaxation(dt);
 
@@ -118,108 +116,36 @@ class Simulation{
         this.computeNextVelocity(dt);
     }
 
-    /*handleStickyness(dt){
-        for(let i=0; i<this.particles.length; i++){
-            let particle = this.particles[i];
-            for (let j=0; j<this.shapes.length; j++){
-                let nearestVec = this.shapes[j].getNearestVector(particle.position, this.MAXSTICKYDISTANCE);
-                if(nearestVec != null && nearestVec.Length2()>=0){
-                    let distance = nearestVec.Length();
-                    let stickyTerm = dt*this.K_STICK*distance*(1-distance/this.MAXSTICKYDISTANCE)*-1;
-                    nearestVec.Normalize();
-                    let stickyVector = Scale(nearestVec,stickyTerm);
-                    particle.position = Add(particle.position,stickyVector);
-                }
-            }
-        }
-    }*/
 
 
+handleOneWayCoupling(){
+    for (let particle of this.particles) {
+        for (let shape of this.shapes) {
+            let dir = shape.getDirectionOut(particle.position);
+            if (dir !== null) {
 
+                // Position correction
+                particle.position = Add(particle.position, dir);
 
-    handleOneWayCoupling(){
-        for(let i=0; i< this.particles.length; i++){
-            let particle = this.particles[i];
-            for(let j=0; j<this.shapes.length;j++){
-                let dir = this.shapes[j].getDirectionOut(particle.position);
-                if(dir != null){
-                    particle.position = Add(particle.position, dir);
+                // Velocity correction
+                let n = dir.Normalize;
+                let vn = particle.velocity.Dot(dir.Normalize);
+
+                if (vn < 0) {
+                    // remove normal velocity
+                    particle.velocity = Sub(
+                        particle.velocity,
+                        Mul(n, vn)
+                    );
+
+                    // partial slip
+                    const friction = 0.8;
+                    particle.velocity = Mul(particle.velocity, 1 - friction);
                 }
             }
         }
     }
-
-    /*adjustSprings(dt){
-        for(let i=0; i< this.particles.length; i++){
-            let neighbours = this.fluidHashGrid.getNeighbourOfParticleIdx(i);
-            let particleA = this.particles[i];
-
-            for(let j = 0; j < neighbours.length;j++){
-				let particleB = this.particles[neighbours[j]];
-				if(particleA == particleB) continue;
-
-                let springId = i + neighbours[j] * this.particles.length;
-
-                if(this.springs.has(springId)){
-                    continue;
-                }
-
-                let rij = Sub(particleB.position,particleA.position); 
-                let q = rij.Length() / this.INTERACTION_RADIUS;
-
-                if(q < 1){
-                    let newSpring = new Spring(i, neighbours[j], this.INTERACTION_RADIUS);
-                    this.springs.set(springId, newSpring);
-                }
-            }
-        }
-
-
-        for(let [key, spring] of this.springs){
-            let pi = this.particles[spring.particleAIdx];
-            let pj = this.particles[spring.particleBIdx];
-
-            let rij = Sub(pi.position, pj.position).Length();
-            let Lij = spring.length;
-            let d = this.GAMMA * Lij;
-
-            if(rij > Lij + d){
-                spring.length += dt * this.PLASTICITY * (rij - Lij - d); // stretching
-
-            }else if(rij < Lij - d){ 
-                spring.length -= dt * this.PLASTICITY * (Lij - d - rij); // compression
-            }
-
-            if(spring.length > this.INTERACTION_RADIUS){
-                this.springs.delete(key);
-            }
-        }
-    }
-
-    //springDisplacement(dt){
-        let dtSquared = dt * dt;
-
-        for(let [key, spring] of this.springs){
-            let pi = this.particles[spring.particleAIdx];
-            let pj = this.particles[spring.particleBIdx];
-
-            let rij = Sub(pi.position, pj.position);
-            let distance = rij.Length();
-
-            if(distance < 0.0001){
-                continue;
-            }
-
-            rij.Normalize();
-            let displacementTerm = dtSquared * this.SPRING_STIFFNESS * 
-                (1 - spring.length / this.INTERACTION_RADIUS) * (spring.length - distance);
-
-            rij = Scale(rij, displacementTerm * 0.5);
-
-            pi.position = Add(pi.position, rij);
-            pj.position = Sub(pj.position, rij);
-        }
-    }*/
+}
 
     viscosity(dt){
         for(let i=0; i< this.particles.length; i++){
@@ -307,7 +233,7 @@ class Simulation{
         const inletWidth = 50;
 
         for(let i=0; i< this.particles.length; i++) {
-            if (this.particles[i].position.x < inletWidth) {
+            if (this.particles[i].position.x < 0) {
             this.particles[i].velocity = new Vector2(this.INFLOW_VELOCITY, 0);
             }
         }

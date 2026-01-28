@@ -1,9 +1,9 @@
 class ParticleEmitter{
-    constructor(position, direction, size, amount, velocity){
+    constructor(position, direction, size,spawnInterval, amount, velocity){
         this.position = position;
         this.direction = direction;
         this.size = size;
-        //this.spawnInterval = spawnInterval;
+        this.spawnInterval = spawnInterval;
         this.amount = amount;
         this.velocity = velocity;
 
@@ -12,7 +12,7 @@ class ParticleEmitter{
 
     spawn(dt, particles){
         let offset = (this.size*2) / this.amount;
-        this.spawnInterval =dt;
+        this.spawnInterval = this.spawnInterval;
         this.time += dt;
 
         if(this.time > this.spawnInterval){

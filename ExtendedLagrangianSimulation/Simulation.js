@@ -13,8 +13,8 @@ class Simulation{
         this.VELOCITY_DAMPING = 1;
         this.GRAVITY = new Vector2(0,0);
         this.REST_DENSITY = 0;
-        this.K_NEAR = 3.0;
-        this.K = 0.8;
+        this.K_NEAR = 4.0;
+        this.K = 1.0;
         this.INTERACTION_RADIUS = 5;
 
         // viscouse parameters
@@ -34,18 +34,20 @@ class Simulation{
         this.fluidHashGrid = new FluidHashGrid(this.INTERACTION_RADIUS);
         //this.instantiateParticles();
         this.fluidHashGrid.initialize(this.particles);
+        this.D = this.PARTICLE_SIZE*10;
+        this.REYNOLDS_NUMBER = (this.INFLOW_VELOCITY*this.D);
 
 
         this.emitter = this.createParticleEmitter(
             new Vector2(0, canvas.height/2), // position
             new Vector2(1,0), // direction
-            200, // size
+            125, // size
             0.5,  // spawn interval
             50, // amount
             this.INFLOW_VELOCITY  // speed
         );
 
-        let circle = new Circle(new Vector2(canvas.width/4,canvas.height/2), this.PARTICLE_SIZE*10, "orange");
+        let circle = new Circle(new Vector2(canvas.width/4,canvas.height/2), this.D, "orange");
         this.shapes.push(circle);
 
     }

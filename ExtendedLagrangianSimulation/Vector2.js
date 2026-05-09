@@ -6,8 +6,16 @@ class Vector2{
 
     Normalize(){
         let length = this.Length();
+        if(length === 0){
+            // nothing to normalize; return zero vector for safety
+            this.x = 0;
+            this.y = 0;
+            return this;
+        }
+
         this.x /= length;
         this.y /= length;
+        return this;
     }
 
     Length(){
@@ -23,7 +31,11 @@ class Vector2{
     }
 
     Dot(vec){
-        return this.x * vec.x + this.y * vec.y
+        if(!vec || typeof vec.x !== 'number' || typeof vec.y !== 'number'){
+            return 0;
+        }
+
+        return this.x * vec.x + this.y * vec.y;
     }
 
     Log(){

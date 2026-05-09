@@ -5,12 +5,45 @@
             * {padding: 0; margin: 0;}
             canvas { display: block; margin: 20px auto;}
             body {background: #242321;}
+            #controls{
+                position: absolute;
+                left: 20px;
+                top: 20px;
+                width: 320px;
+                background: rgba(0,0,0,0.6);
+                color: #fff;
+                border: 1px solid #555;
+                padding: 8px;
+                font-family: Arial, sans-serif;
+                font-size: 12px;
+                max-height: 600px;
+                overflow: auto;
+            }
+            #deltaTime{
+                position: absolute;
+                left: 360px;
+                top: 20px;
+                width: 300px;
+                height: 220px;
+                background: rgba(0,0,0,0.5);
+                color: #fff;
+                border: 1px solid #555;
+                padding: 8px;
+                font-family: monospace;
+                font-size: 12px;
+                resize: none;
+            }
+            .sliderRow{ display:flex; align-items:center; margin:6px 0; }
+            .sliderRow label{ width: 140px; }
+            .sliderRow input[type=range]{ flex: 1; margin: 0 8px; }
+            .sliderValue{ width: 50px; text-align: right; }
         </style>
     </head>
 
     <body>
         <canvas id="canvas" width="1781px" height="712px" style="border: solid 1px black"></canvas>
-        <p id = "deltaTime"></p>
+        <div id="controls"></div>
+        <textarea id="deltaTime" readonly></textarea>
         <script src="Playground.js"></script>
         <script src="Simulation.js"></script>
         <script src="Vector2.js"></script>
@@ -31,8 +64,63 @@
             let lastTime = performance.now();
             let currentTime = 0;
             let deltaTime = 0;
+            // CPU/memory diagnostics
+            let frameProcTime = 0; // ms spent in update+draw
+            let cpuLoadEMA = 0; // exponential moving average of CPU load %
+            const cpuAlpha = 0.12;
+            const targetFrameMs = 1000.0 / 60.0;
 
             let playground = new Playground();
+
+            // build slider UI bound to playground.simulation properties
+            (function buildControls(){
+                let sim = playground.simulation;
+                let container = document.getElementById('controls');
+
+                function addSlider(key, label, min, max, step, format){
+                    let row = document.createElement('div'); row.className = 'sliderRow';
+                    let lab = document.createElement('label'); lab.textContent = label;
+                    let range = document.createElement('input'); range.type = 'range'; range.min = min; range.max = max; range.step = step;
+                    // set initial value from sim if exists, otherwise fallback to midpoint
+                    let initial = (sim[key] !== undefined) ? sim[key] : ((min-0 + max-0)/2);
+                    range.value = initial;
+                    let val = document.createElement('div'); val.className = 'sliderValue'; val.textContent = (format ? format(initial) : initial);
+
+                    range.addEventListener('input', function(){
+                        let v = (range.step.indexOf('.') >= 0) ? parseFloat(range.value) : (range.value|0);
+                        if(format) val.textContent = format(v); else val.textContent = v;
+                        // apply to simulation
+                        if(key === 'INTERACTION_RADIUS'){
+                            sim.INTERACTION_RADIUS = v;
+                            // rebuild hash grid to use new radius
+                            sim.fluidHashGrid = new FluidHashGrid(sim.INTERACTION_RADIUS);
+                            sim.fluidHashGrid.initialize(sim.particles);
+                        } else if(key === 'PARTICLE_SIZE'){
+                            sim.PARTICLE_SIZE = v;
+                        } else if(sim[key] !== undefined){
+                            sim[key] = v;
+                        }
+                    });
+
+                    row.appendChild(lab); row.appendChild(range); row.appendChild(val);
+                    container.appendChild(row);
+                }
+
+                addSlider('PARTICLE_SIZE','Particle Size',1,10,1,function(v){ return v.toFixed(0); });
+                addSlider('INFLOW_VELOCITY','Inflow Velocity',0,20,0.1,function(v){ return v.toFixed(2); });
+                addSlider('REST_DENSITY','Rest Density',0,5,0.1,function(v){ return v.toFixed(2); });
+                addSlider('K_NEAR','K_NEAR',0,10,0.1,function(v){ return v.toFixed(2); });
+                addSlider('K','K (stiffness)',0,5,0.05,function(v){ return v.toFixed(2); });
+                addSlider('INTERACTION_RADIUS','Interaction Radius',1,50,1,function(v){ return v.toFixed(0); });
+                addSlider('SIGMA','Viscosity σ',0,1,0.01,function(v){ return v.toFixed(2); });
+                addSlider('WALL_PRESSURE_MIN','Wall Pressure Min',0,1,0.05,function(v){ return v.toFixed(2); });
+                addSlider('WALL_PRESSURE_MAX','Wall Pressure Max',0,2,0.05,function(v){ return v.toFixed(2); });
+                addSlider('WALL_FRICTION','Wall Friction',0,0.5,0.01,function(v){ return v.toFixed(3); });
+
+                // ensure initial values from sim are reflected
+                // fire input on each range to set UI text
+                Array.from(container.querySelectorAll('input[type=range]')).forEach(r => r.dispatchEvent(new Event('input')));
+            })();
 
             mainLoop();
 
@@ -48,10 +136,55 @@
                 currentTime = performance.now();
                 deltaTime = (currentTime - lastTime) / 1000;
 
-                deltaTimeDisplay.textContent = "Delta Time: " + deltaTime.toFixed(4) + "s";
+                    // measure how long the update+draw take (frame CPU usage estimate)
+                        let procStart = performance.now();
+                        updatePlayground(deltaTime);
+                        let procEnd = performance.now();
+                        frameProcTime = procEnd - procStart;
+                        let cpuLoad = Math.min(100, (frameProcTime / targetFrameMs) * 100);
+                        cpuLoadEMA = cpuAlpha * cpuLoad + (1 - cpuAlpha) * cpuLoadEMA;
 
-                updatePlayground(deltaTime);
-                lastTime = currentTime;
+                    // collect diagnostics from the simulation
+                    try{
+                        let sim = playground.simulation;
+                        let particles = sim.particles.length;
+                        let nearCount = 0;
+                        let sumDist = 0;
+                        for(let i=0;i<sim.particles.length;i++){
+                            let p = sim.particles[i];
+                            if(p.nearWall){ nearCount++; sumDist += Math.max(0, p.wallDist || 0); }
+                        }
+                        let avgDist = nearCount > 0 ? (sumDist / nearCount) : 0;
+                        let fps = deltaTime > 0 ? (1.0 / deltaTime) : 0;
+
+                        let lines = [];
+                        lines.push("Delta Time : " + deltaTime.toFixed(4) + " s    (FPS " + fps.toFixed(1) + ")");
+                        lines.push("CPU load   : " + cpuLoadEMA.toFixed(1) + "%    (frame " + frameProcTime.toFixed(2) + " ms)");
+
+                        // memory: try performance.memory if available (Chrome)
+                        if(window.performance && performance.memory){
+                            let usedMB = performance.memory.usedJSHeapSize / 1024 / 1024;
+                            let limitMB = performance.memory.jsHeapSizeLimit / 1024 / 1024;
+                            let memPct = (usedMB / limitMB) * 100;
+                            lines.push("JS Heap     : " + usedMB.toFixed(1) + " MB / " + limitMB.toFixed(0) + " MB (" + memPct.toFixed(1) + "%)");
+                        } else if(navigator.deviceMemory){
+                            lines.push("Device RAM  : ~" + navigator.deviceMemory + " GB (no JS heap stats)");
+                        } else {
+                            lines.push("Memory      : not available in this browser");
+                        }
+
+                        lines.push("");
+                        lines.push("Particles  : " + particles + "    Near wall: " + nearCount);
+                        lines.push("Avg wallDist: " + avgDist.toFixed(3));
+                        lines.push("DEBUG: " + (sim.DEBUG ? 'ON' : 'OFF') + "    Frame: " + sim.frameCount);
+
+                        deltaTimeDisplay.value = lines.join('\n');
+                    }catch(e){
+                        // fallback to simple display
+                        deltaTimeDisplay.value = "Delta Time: " + deltaTime.toFixed(4) + "s";
+                    }
+
+                    lastTime = currentTime;
             }
 
             function Clear(){

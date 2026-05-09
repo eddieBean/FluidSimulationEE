@@ -26,6 +26,16 @@ class Simulation{
         this.PLASTICITY = 0;
         this.SPRING_STIFFNESS = 0;
 
+        // wall-awareness tuning
+        this.WALL_PRESSURE_MIN = 0.4; // minimum pressure multiplier at the wall (0.3-0.5 suggested)
+        this.WALL_VISCOSITY_MIN = 0.5; // minimum viscosity multiplier at the wall (~0.5 suggested)
+        this.WALL_FRICTION = 0.02; // low tangential friction when colliding with walls
+
+        // debug / runtime flags
+        this.DEBUG = false; // set true to enable periodic console logging
+        this.frameCount = 0;
+        this.DEBUG_LOG_INTERVAL = 60; // frames between debug logs
+
         //sticky parameters
         this.MAXSTICKYDISTANCE = this.INTERACTION_RADIUS*1.4;
         this.K_STICK = 0.1;
@@ -39,9 +49,9 @@ class Simulation{
         this.emitter = this.createParticleEmitter(
             new Vector2(0, canvas.height/2), // position
             new Vector2(1,0), // direction
-            200, // size
+            100, // size
             0.5,  // spawn interval
-            50, // amount
+            30, // amount
             this.INFLOW_VELOCITY  // speed
         );
 
@@ -93,6 +103,26 @@ class Simulation{
         this.fluidHashGrid.mapParticleToCell();
     }
 
+    // Compute distance of each particle to the nearest circular wall (if any)
+    // and mark particles that are within interaction radius as `nearWall`.
+    computeWallDistances(){
+        for(let i=0;i<this.particles.length;i++){
+            let p = this.particles[i];
+            let minDist = Infinity;
+
+            for(let s=0; s<this.shapes.length; s++){
+                let shape = this.shapes[s];
+                if(shape.position !== undefined && shape.radius !== undefined){
+                    let d = Sub(p.position, shape.position).Length() - shape.radius;
+                    if(d < minDist) minDist = d;
+                }
+            }
+
+            p.wallDist = minDist;
+            p.nearWall = (minDist < this.INTERACTION_RADIUS);
+        }
+    }
+
     update(dt){
         this.neighbourSearch();
 
@@ -103,9 +133,15 @@ class Simulation{
 
         this.inflowVelocityEnforcement();
 
+        // compute wall distances based on current positions (used by viscosity)
+        this.computeWallDistances();
+
         this.viscosity(dt);
 
         this.predictPositions(dt);
+
+        // recompute wall distances on predicted positions (used by density relaxation)
+        this.computeWallDistances();
 
 
         this.doubleDensityRelaxation(dt);
@@ -114,6 +150,21 @@ class Simulation{
         this.worldBoundary();
 
         this.computeNextVelocity(dt);
+
+        // debug logging (periodic)
+        if(this.DEBUG){
+            this.frameCount++;
+            if(this.frameCount % this.DEBUG_LOG_INTERVAL === 0){
+                let nearCount = 0;
+                let sumDist = 0;
+                for(let i=0;i<this.particles.length;i++){
+                    let p = this.particles[i];
+                    if(p.nearWall){ nearCount++; sumDist += Math.max(0, p.wallDist); }
+                }
+                let avgDist = nearCount > 0 ? (sumDist / nearCount).toFixed(3) : 'n/a';
+                console.log(`Sim Debug: particles=${this.particles.length}, nearWall=${nearCount}, avgWallDist=${avgDist}, K=${this.K.toFixed(3)}, K_NEAR=${this.K_NEAR.toFixed(3)}, SIGMA=${this.SIGMA.toFixed(3)}`);
+            }
+        }
     }
 
 
@@ -121,26 +172,27 @@ class Simulation{
 handleOneWayCoupling(){
     for (let particle of this.particles) {
         for (let shape of this.shapes) {
-            let dir = shape.getDirectionOut(particle.position);
-            if (dir !== null) {
 
-                // Position correction
+            let dir = shape.getDirectionOut(particle.position);
+            if (dir !== null){
+                // --- push particle out ---
                 particle.position = Add(particle.position, dir);
 
-                // Velocity correction
-                let n = dir.Normalize;
-                let vn = particle.velocity.Dot(dir.Normalize);
+                // --- compute normal ---
+                let n = dir.Normalize();
+                // --- normal velocity ---
+                let vn = particle.velocity.Dot(n);
 
                 if (vn < 0) {
-                    // remove normal velocity
+                    // remove inward normal motion
                     particle.velocity = Sub(
                         particle.velocity,
-                        Mul(n, vn)
+                        Scale(n, vn)
                     );
 
-                    // partial slip
-                    const friction = 0.8;
-                    particle.velocity = Mul(particle.velocity, 1 - friction);
+                    // --- partial slip (low tangential friction) ---
+                    const friction = this.WALL_FRICTION;
+                    particle.velocity = Scale(particle.velocity, 1 - friction);
                 }
             }
         }
@@ -167,7 +219,20 @@ handleOneWayCoupling(){
                     let u = Sub(velocityA, velocityB).Dot(rij);
 
                     if(u > 0){
-                        let ITerm = dt * (1-q) * (this.SIGMA * u + this.BETA * u * u);
+                        // attenuate viscosity near walls: compute per-particle scale in [WALL_VISCOSITY_MIN, 1]
+                        let wallDistA = (particleA.wallDist !== undefined) ? particleA.wallDist : Infinity;
+                        let wallDistB = (particleB.wallDist !== undefined) ? particleB.wallDist : Infinity;
+
+                        let clampA = Math.max(0, Math.min(1, wallDistA / this.INTERACTION_RADIUS));
+                        let clampB = Math.max(0, Math.min(1, wallDistB / this.INTERACTION_RADIUS));
+
+                        let scaleA = particleA.nearWall ? (this.WALL_VISCOSITY_MIN + (1 - this.WALL_VISCOSITY_MIN) * clampA) : 1.0;
+                        let scaleB = particleB.nearWall ? (this.WALL_VISCOSITY_MIN + (1 - this.WALL_VISCOSITY_MIN) * clampB) : 1.0;
+
+                        // use the smaller scale (more attenuation) when only one particle is near-wall
+                        let sigmaEff = this.SIGMA * Math.min(scaleA, scaleB);
+
+                        let ITerm = dt * (1-q) * (sigmaEff * u + this.BETA * u * u);
                         let I = Scale(rij, ITerm);
 
                         particleA.velocity = Sub(particleA.velocity, Scale(I, 0.5));
@@ -203,6 +268,15 @@ handleOneWayCoupling(){
             let pressure = this.K * (density - this.REST_DENSITY);
             let pressureNear = this.K_NEAR * densityNear;
             let particleADisplacement = Vector2.Zero();
+
+            // attenuate pressure for particles near walls to compensate truncated kernel
+            if(particleA.nearWall){
+                let wd = (particleA.wallDist !== undefined) ? particleA.wallDist : 0;
+                let t = Math.max(0, Math.min(1, wd / this.INTERACTION_RADIUS));
+                let factor = this.WALL_PRESSURE_MIN + (1 - this.WALL_PRESSURE_MIN) * t;
+                pressure *= factor;
+                pressureNear *= factor;
+            }
 
             
             for(let j=0; j< neighbours.length; j++){

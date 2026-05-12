@@ -1,0 +1,63 @@
+body {
+	font-family: verdana; 
+	font-size: 15px;
+	margin: 0;
+	padding: 10px;
+}
+
+.controls {
+	margin-bottom: 10px;
+}
+
+.options {
+	margin-bottom: 10px;
+}
+
+.options label {
+	display: inline-block;
+	margin-right: 15px;
+	cursor: pointer;
+}
+
+.options label input[type="checkbox"] {
+	margin-right: 5px;
+	cursor: pointer;
+}
+
+.button {
+	background-color: #606060;
+	border: none;
+	color: white;
+	padding: 10px 15px;
+	font-size: 16px;
+	margin: 4px 2px;
+	cursor: pointer;
+	border-radius: 4px;
+	transition: background-color 0.2s;
+}
+
+.button:hover {
+	background-color: #808080;
+}
+
+.button:active {
+	background-color: #404040;
+}
+
+.slider {
+	-webkit-appearance: none;
+	width: 80px;
+	height: 6px;
+	border-radius: 5px;
+	background: #d3d3d3;
+	outline: none;
+	opacity: 0.7;
+	-webkit-transition: .2s;
+	transition: opacity .2s;
+}
+
+#myCanvas {
+	border: 2px solid #333;
+	display: block;
+	background-color: #f0f0f0;
+}

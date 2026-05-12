@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Euler Fluid Simulation</title>
+	<link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+	<!-- Scene Control Buttons -->
+	<div class="controls">
+		<button class="button scene-button" data-scene="1">Wind Tunnel</button>
+		<button class="button scene-button" data-scene="3">Hires Tunnel</button>
+		<button class="button scene-button" data-scene="0">Tank</button>
+		<button class="button scene-button" data-scene="2">Paint</button>
+	</div>
+
+	<!-- Visualization Options -->
+	<div class="options">
+		<label>
+			<input type="checkbox" id="streamButton">
+			Streamlines
+		</label>
+		<label>
+			<input type="checkbox" id="velocityButton">
+			Velocities
+		</label>
+		<label>
+			<input type="checkbox" id="pressureButton">
+			Pressure
+		</label>
+		<label>
+			<input type="checkbox" id="smokeButton" checked>
+			Smoke
+		</label>
+		<label>
+			<input type="checkbox" id="overrelaxButton" checked>
+			Overrelax
+		</label>
+	</div>
+
+	<!-- Canvas -->
+	<canvas id="myCanvas"></canvas>
+
+	<!-- Main Application Script -->
+	<script type="module" src="js/app.js"></script>
+</body>
+
+</html>

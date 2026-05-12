@@ -7,6 +7,7 @@ class Simulation{
 
         this.PARTICLE_SIZE = 3;
 
+        
         this.INFLOW_VELOCITY = 5;
 
         this.AMOUNT_PARTICLES = 2000;
@@ -40,9 +41,8 @@ class Simulation{
         this.MAXSTICKYDISTANCE = this.INTERACTION_RADIUS*1.4;
         this.K_STICK = 0.1;
 
-
         this.fluidHashGrid = new FluidHashGrid(this.INTERACTION_RADIUS);
-        //this.instantiateParticles();
+        this.instantiateParticles(x, y, this.AMOUNT_PARTICLES);
         this.fluidHashGrid.initialize(this.particles);
 
 
@@ -76,7 +76,7 @@ class Simulation{
     }
 
     instantiateParticles(){
-        let offsetBetweenParticles = 10;
+        let offsetBetweenParticles = 3;
         let offsetAllParticles = new Vector2(750, 100);
 
         let xParticles = Math.sqrt(this.AMOUNT_PARTICLES);
@@ -126,12 +126,15 @@ class Simulation{
     update(dt){
         this.neighbourSearch();
 
-        this.emitter.spawn(dt, this.particles);
-        if(this.rotate){
-            this.emitter.rotate(0.01);
+        for(let i=0; i< this.particleEmitters.length; i++){
+            this.particleEmitters[i].spawn(dt, this.particles);
+            if(this.rotate){
+                this.emitter.rotate(0.01);
+            }
         }
 
-        this.inflowVelocityEnforcement();
+
+        //this.inflowVelocityEnforcement();
 
         // compute wall distances based on current positions (used by viscosity)
         this.computeWallDistances();
@@ -303,9 +306,6 @@ handleOneWayCoupling(){
     }
 
     inflowVelocityEnforcement(){
-        
-        const inletWidth = 50;
-
         for(let i=0; i< this.particles.length; i++) {
             if (this.particles[i].position.x < 0) {
             this.particles[i].velocity = new Vector2(this.INFLOW_VELOCITY, 0);

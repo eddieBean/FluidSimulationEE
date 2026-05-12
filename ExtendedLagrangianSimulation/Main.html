@@ -41,9 +41,13 @@
     </head>
 
     <body>
-        <canvas id="canvas" width="1781px" height="712px" style="border: solid 1px black"></canvas>
-        <div id="controls"></div>
-        <textarea id="deltaTime" readonly></textarea>
+        <div>
+            <canvas id="canvas" width="1781px" height="712px" style="border: solid 1px black"></canvas>
+            <button id="startSimulation" onClick="mainLoop()">Start Simulation</button>
+            <div id="controls" style="position:static"></div>
+            <textarea id="deltaTime" style="position:static" readonly></textarea>
+        </div>
+
         <script src="Playground.js"></script>
         <script src="Simulation.js"></script>
         <script src="Vector2.js"></script>
@@ -74,6 +78,7 @@
 
             // build slider UI bound to playground.simulation properties
             (function buildControls(){
+                console.profile("startup");
                 let sim = playground.simulation;
                 let container = document.getElementById('controls');
 
@@ -122,7 +127,6 @@
                 Array.from(container.querySelectorAll('input[type=range]')).forEach(r => r.dispatchEvent(new Event('input')));
             })();
 
-            mainLoop();
 
             function updatePlayground(dt){
                 Clear();

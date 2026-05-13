@@ -4,7 +4,8 @@
         <style>
             * {padding: 0; margin: 0;}
             canvas { display: block; margin: 20px auto;}
-            body {background: #242321;}
+            /* body {background: #242321;} */
+            body {background: #DDDDDD;}
             #controls{
                 position: absolute;
                 left: 20px;
@@ -134,15 +135,21 @@
                 playground.draw();
             }
 
-            function mainLoop(){
+            function start(){
+                buildControls();
+                let startTime = performance.now();
+                mainLoop(startTime);
+            }
+
+
+            function mainLoop(startTime){
                 window.requestAnimationFrame(mainLoop);
-
                 currentTime = performance.now();
-                deltaTime = (currentTime - lastTime) / 1000;
+                deltaTime = (currentTime - lastTime) /1000; // convert ms to seconds, apply slowdown
+                updatePlayground(deltaTime);
 
-                    // measure how long the update+draw take (frame CPU usage estimate)
+                     // measure how long the update+draw take (frame CPU usage estimate)
                         let procStart = performance.now();
-                        updatePlayground(deltaTime);
                         let procEnd = performance.now();
                         frameProcTime = procEnd - procStart;
                         let cpuLoad = Math.min(100, (frameProcTime / targetFrameMs) * 100);
@@ -165,26 +172,12 @@
                         lines.push("Delta Time : " + deltaTime.toFixed(4) + " s    (FPS " + fps.toFixed(1) + ")");
                         lines.push("CPU load   : " + cpuLoadEMA.toFixed(1) + "%    (frame " + frameProcTime.toFixed(2) + " ms)");
 
-                        // memory: try performance.memory if available (Chrome)
-                        if(window.performance && performance.memory){
-                            let usedMB = performance.memory.usedJSHeapSize / 1024 / 1024;
-                            let limitMB = performance.memory.jsHeapSizeLimit / 1024 / 1024;
-                            let memPct = (usedMB / limitMB) * 100;
-                            lines.push("JS Heap     : " + usedMB.toFixed(1) + " MB / " + limitMB.toFixed(0) + " MB (" + memPct.toFixed(1) + "%)");
-                        } else if(navigator.deviceMemory){
-                            lines.push("Device RAM  : ~" + navigator.deviceMemory + " GB (no JS heap stats)");
-                        } else {
-                            lines.push("Memory      : not available in this browser");
-                        }
 
-                        lines.push("");
                         lines.push("Particles  : " + particles + "    Near wall: " + nearCount);
                         lines.push("Avg wallDist: " + avgDist.toFixed(3));
-                        lines.push("DEBUG: " + (sim.DEBUG ? 'ON' : 'OFF') + "    Frame: " + sim.frameCount);
-
                         deltaTimeDisplay.value = lines.join('\n');
                     }catch(e){
-                        // fallback to simple display
+                        // fallback to simple display 
                         deltaTimeDisplay.value = "Delta Time: " + deltaTime.toFixed(4) + "s";
                     }
 
@@ -192,7 +185,8 @@
             }
 
             function Clear(){
-                ctx.fillStyle = "#242321";
+                // ctx.fillStyle = "#242321";
+                ctx.fillStyle = "#DDDDDD";
                 ctx.fillRect(0,0, canvas.width, canvas.height);
             }
 

@@ -19,7 +19,6 @@ class FluidHashGrid{
     getGridHashFromPos(pos){
         let x = parseInt(pos.x / this.cellSize);
         let y = parseInt(pos.y / this.cellSize);
-
         return this.cellIndexToHash(x,y);
     }
 

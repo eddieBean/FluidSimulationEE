@@ -162,26 +162,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 				//solve left leaning Gauss-Seidel iterations for pressure projection
 				var iStart = iter % 2 == 0 ? 1 : this.numX - 2;
-				var iEnd = iter % 2 == 0 ? this.numX - 2 : 1;
+				var iEnd = iter % 2 == 0 ? this.numX - 1 : 0;
 				var iStep = iter % 2 == 0 ? 1 : -1;
 
 
 
-				for (var i = iStart; i < iEnd; i += iStep) {
+				for (var i = iStart; iStep > 0 ? i <= iEnd : i >= iEnd; i += iStep) {
 					for (var j = 1; j < this.numY-1; j++) {
 						// Skip solid cells
 						if (this.s[i*n + j] == 0.0)
 							continue;
 
 						// Count number of adjacent fluid neighbors
-						var s = this.s[i*n + j];
 						var sx0 = this.s[(i-1)*n + j];
 						var sx1 = this.s[(i+1)*n + j];
 						var sy0 = this.s[i*n + j-1];
 						var sy1 = this.s[i*n + j+1];
 						var s = sx0 + sx1 + sy0 + sy1;
-						if (s == 0.0)
-							continue;
+
 
 						// Calculate velocity divergence at this cell
 						var div = this.u[(i+1)*n + j] - this.u[i*n + j] + 
@@ -207,38 +205,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		// Ensures smooth velocity conditions at boundaries
 		extrapolate() {
 			var n = this.numY;
-			// Extrapolate u-velocity at vertical boundaries
-			for (var i = 0; i < this.numX; i++) {
-				this.u[i*n + 0] = this.u[i*n + 1];
-				this.u[i*n + this.numY-1] = this.u[i*n + this.numY-2]; 
-			}
-			// Extrapolate v-velocity at horizontal boundaries
-			for (var j = 0; j < this.numY; j++) {
-				this.v[0*n + j] = this.v[1*n + j];
-				this.v[(this.numX-1)*n + j] = this.v[(this.numX-2)*n + j] 
-			}
 
-			// var n = this.numY;
-			// for (var i = 0; i < this.numX; i++) {
-			// 	// Copy u-velocity
-			// 	this.u[i*n + 0] = this.u[i*n + 1];
-			// 	this.u[i*n + this.numY-1] = this.u[i*n + this.numY-2]; 
-				
-			// 	// ADD THIS: Copy smoke density (m) at top/bottom boundaries
-			// 	this.m[i*n + 0] = this.m[i*n + 1];
-			// 	this.m[i*n + this.numY-1] = this.m[i*n + this.numY-2];
-			// }
-			// for (var j = 0; j < this.numY; j++) {
-			// 	// Copy v-velocity
-			// 	this.v[0*n + j] = this.v[1*n + j];
-			// 	this.v[(this.numX-1)*n + j] = this.v[(this.numX-2)*n + j];
-				
-			// 	// ADD THIS: Copy smoke density (m) at left/right boundaries
-			// 	this.m[0*n + j] = this.m[1*n + j];
-			// 	this.m[(this.numX-1)*n + j] = this.m[(this.numX-2)*n + j];
-			// }
-
-			// // ADD THIS: zero out vertical velocity at top and bottom faces
+			// // Zero out vertical velocity at top and bottom faces
 			// for (var i = 0; i < this.numX; i++) {
 			// 	this.v[i*n + 0] = 0.0;
 			// 	this.v[i*n + this.numY-1] = 0.0;
@@ -248,12 +216,44 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			// 	this.u[0*n + j] = 0.0;
 			// 	this.u[(this.numX-1)*n + j] = 0.0;
 			// }
-			// Extrapolate smoke field into boundaries to prevent visual fading
+			// Extrapolate u-velocity at vertical boundaries
+			for (var i = 0; i < this.numX; i++) {
+				this.u[i*n + 0] = this.u[i*n + 1];
+				this.u[i*n + this.numY-1] = this.u[i*n + this.numY-2]; 
+
+				// this.m[i*n + 0] = this.m[i*n + 1];
+				// this.m[i*n + this.numY-1] = this.m[i*n + this.numY-2];
+			
+			}
+			// Extrapolate v-velocity at horizontal boundaries
+			for (var j = 0; j < this.numY; j++) {
+				this.v[0*n + j] = this.v[1*n + j];
+				this.v[(this.numX-1)*n + j] = this.v[(this.numX-2)*n + j] 
+
+				// this.m[0*n + j] = this.m[1*n + j];
+				// this.m[(this.numX-1)*n + j] = this.m[(this.numX-2)*n + j];
+			}
+
+
+
+			// var n = this.numY;
+
+			// // 1. Process Bottom (j=0) and Top (j=numY-1) boundaries
 			// for (var i = 0; i < this.numX; i++) {
-			// 	this.m[i*n + 0] = this.m[i*n + 1];
-			// 	this.m[i*n + this.numY-1] = this.m[i*n + this.numY-2]; 
-			// }p
+			// 	// Extrapolate horizontal velocity
+			// 	this.u[i*n + 0] = this.u[i*n + 1];
+			// 	this.u[i*n + this.numY-1] = this.u[i*n + this.numY-2]; 
+
+			// 	// FIX: Extrapolate smoke field to prevent "fading" at the floor/ceiling
+			// 	
+
+			// // 2. Process Left (i=0) and Right (i=numX-1) boundaries
 			// for (var j = 0; j < this.numY; j++) {
+			// 	// Extrapolate vertical velocity
+			// 	this.v[0*n + j] = this.v[1*n + j];
+			// 	this.v[(this.numX-1)*n + j] = this.v[(this.numX-2)*n + j];
+
+			// 	// FIX: Extrapolate smoke field to prevent "fading" at the side walls
 			// 	this.m[0*n + j] = this.m[1*n + j];
 			// 	this.m[(this.numX-1)*n + j] = this.m[(this.numX-2)*n + j];
 			// }
@@ -269,25 +269,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			var h1 = 1.0 / h;
 			var h2 = 0.5 * h;
 
-			// Clamp coordinates to grid boundaries
 			x = Math.max(Math.min(x, this.numX * h), h);
 			y = Math.max(Math.min(y, this.numY * h), h);
 
 			var dx = 0.0;
 			var dy = 0.0;
+
 			var f;
 
-			// Offset sample position based on field type (MAC grid staggering)
-			// u-component: offset by half-cell in y direction
-			// v-component: offset by half-cell in x direction
-			// smoke: offset by half-cell in both directions
 			switch (field) {
 				case U_FIELD: f = this.u; dy = h2; break;
 				case V_FIELD: f = this.v; dx = h2; break;
 				case S_FIELD: f = this.m; dx = h2; dy = h2; break
+
 			}
 
-			// Find grid cell corners for bilinear interpolation
 			var x0 = Math.min(Math.floor((x-dx)*h1), this.numX-1);
 			var tx = ((x-dx) - x0*h) * h1;
 			var x1 = Math.min(x0 + 1, this.numX-1);
@@ -296,11 +292,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			var ty = ((y-dy) - y0*h) * h1;
 			var y1 = Math.min(y0 + 1, this.numY-1);
 
-			// Bilinear weights
 			var sx = 1.0 - tx;
 			var sy = 1.0 - ty;
 
-			// Interpolate between four corner values
 			var val = sx*sy * f[x0*n + y0] +
 				tx*sy * f[x1*n + y0] +
 				tx*ty * f[x1*n + y1] +
@@ -308,7 +302,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			
 			return val;
 		}
-
 		// Average u-velocity at four corners of a cell (for interpolation)
 		avgU(i, j) {
 			var n = this.numY;
@@ -420,12 +413,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 			// 3. Fix boundary conditions by extrapolating velocity
 			this.extrapolate();
-			
+
 			// 4. Transport velocity field along itself
 			this.advectVel(dt);
 			
 			// 5. Transport smoke/dye for visualization
 			this.advectSmoke(dt);
+
+
 		}
 	}
 
@@ -467,7 +462,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		// Set grid resolution based on scene type
 		var res = 100;
 		if (sceneNr == 0)
-			res = 80;				// Tank: lower resolution
+			res = 50;				// Tank: lower resolution
 		else if (sceneNr == 3)
 			res = 200;				// High-res tunnel: higher resolution
 
@@ -487,36 +482,35 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		if (sceneNr == 0) {   		
 			scene.showObstacle = false;
-			scene.paused = true;
 			// TANK SCENE: Water column with gravity
 			// Initialize all cells as fluid (1.0) except boundaries (0.0)
 			for (var i = 0; i < f.numX; i++) {
 				for (var j = 0; j < f.numY; j++) {
 					var s = 1.0;	// fluid
 					if (i == 0 || i == f.numX-1 || j == 0)
-						s = 0.0;	// solid boundary
+						s = 0.0;	// solid
 					f.s[i*n + j] = s
 				}
 			}
 
-			f.m.fill(1.0);
-			// Initial fluid square width and height
-			var halfWidth = Math.floor(f.numX * 0.4);
-			var halfHeight = Math.floor(f.numY * 0.4);
+			// f.m.fill(1.0);
+			// // Initial fluid square width and height
+			// var width = Math.floor(f.numX * 0.4);
+			// var height = Math.floor(f.numY * 0.4);
 
-			//centers of the scene
-			var centerX = Math.floor(f.numX * 0.5);
-			var centerY = Math.floor(f.numY * 0.5);
+			// //centers of the scene
+			// var centerX = Math.floor(f.numX * 0.5);
+			// var centerY = Math.floor(f.numY * 0.5);
 
-			for(var i = centerX - halfWidth; i < centerX + halfWidth; i++) {
-				for(var j = centerY - halfHeight; j < centerY + halfHeight; j++) {
-					f.m[i*n + j] = 0.0;	// smoke/dye concentration for visualization
-				}
-			}
-			scene.gravity = 0;
+			// for(var i = 0; i < width; i++) {
+			// 	for(var j = 0; j <height; j++) {
+			// 		f.m[i*n + j] = 0.0;	// smoke/dye concentration for visualization
+			// 	}
+			// }
+			scene.gravity = -9.81;
 			scene.overRelaxation = 1.0;
-			scene.showPressure = false;
-			scene.showSmoke = true;
+			scene.showPressure = true;
+			scene.showSmoke = false;
 			scene.showStreamlines = false;
 			scene.showVelocities = false;
 		}
@@ -566,19 +560,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		else if (sceneNr == 2) { 
 			// PAINT SCENE: Draw with moving obstacle, painting effect
 			scene.gravity = 0.0;
-			var halfWidth = Math.floor(f.numX * 0.4);
-			var halfHeight = Math.floor(f.numY * 0.4);
+			scene.showObstacle = true;
+			// var halfWidth = Math.floor(f.numX * 0.4);
+			// var halfHeight = Math.floor(f.numY * 0.4);
 
-			//centers of the scene
-			var centerX = Math.floor(f.numX * 0.5);
-			var centerY = Math.floor(f.numY * 0.5);
+			// //centers of the scene
+			// var centerX = Math.floor(f.numX * 0.5);
+			// var centerY = Math.floor(f.numY * 0.5);
 
-			for(var i = centerX - halfWidth; i < centerX + halfWidth; i++) {
-				for(var j = centerY - halfHeight; j < centerY + halfHeight; j++) {
-					f.m[i*n + j] = 0.0;	// smoke/dye concentration for visualization
-				}
-			}
-			scene.gravity = 9.81;
+			// for(var i = centerX - halfWidth; i < centerX + halfWidth; i++) {
+			// 	for(var j = centerY - halfHeight; j < centerY + halfHeight; j++) {
+			// 		f.m[i*n + j] = 0.0;	// smoke/dye concentration for visualization
+			// 	}
+			// }
 			scene.overRelaxation = 1.0;
 			scene.showPressure = false;
 			scene.showSmoke = true;

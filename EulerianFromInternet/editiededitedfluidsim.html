@@ -59,8 +59,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	<input type = "checkbox" name = "field" id = "smokeButton" onclick = "scene.showSmoke = !scene.showSmoke;" checked>Smoke
 	<input type = "checkbox" id = "overrelaxButton" onclick = "scene.overRelaxation = scene.overRelaxation == 1.0 ? 1.9 : 1.0" checked>Overrelax
 	<br>
-	<canvas id="myCanvas" width="1781px" height="712px" style="border:2px solid"></canvas>
-	<p id = "deltaTimeDisplay"></p>
+	<canvas id="myCanvas" style="border:2px solid"></canvas>
+	
 <script>
 
 	var canvas = document.getElementById("myCanvas");
@@ -166,6 +166,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			for (var j = 0; j < this.numY; j++) {
 				this.v[0*n + j] = this.v[1*n + j];
 				this.v[(this.numX-1)*n + j] = this.v[(this.numX-2)*n + j] 
+			}
+		}
+
+		set_bnd() {
+			// Enforce boundary conditions (Stam-style)
+			var n = this.numY;
+			
+			// Copy density to boundaries to prevent fading
+			for (var i = 0; i < this.numX; i++) {
+				this.m[i*n + 0] = this.m[i*n + 1];                    // bottom
+				this.m[i*n + (this.numY-1)] = this.m[i*n + (this.numY-2)]; // top
+			}
+			for (var j = 0; j < this.numY; j++) {
+				this.m[0*n + j] = this.m[1*n + j];                    // left
+				this.m[(this.numX-1)*n + j] = this.m[(this.numX-2)*n + j]; // right
+			}
+			
+			// Force normal velocities to 0 to prevent leaking
+			// Bottom and top: v must be 0
+			for (var i = 0; i < this.numX; i++) {
+				this.v[i*n + 0] = 0.0;
+				this.v[i*n + (this.numY-1)] = 0.0;
+			}
+			// Left and right: u must be 0
+			for (var j = 0; j < this.numY; j++) {
+				this.u[0*n + j] = 0.0;
+				this.u[(this.numX-1)*n + j] = 0.0;
 			}
 		}
 
@@ -277,8 +304,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			var h = this.h;
 			var h2 = 0.5 * h;
 
-			for (var i = 1; i < this.numX-1; i++) {
-				for (var j = 1; j < this.numY-1; j++) {
+			for (var i = 0; i < this.numX-1; i++) {
+				for (var j = 0; j < this.numY-1; j++) {
 
 					if (this.s[i*n + j] != 0.0) {
 						var u = (this.u[i*n + j] + this.u[(i+1)*n + j]) * 0.5;
@@ -304,6 +331,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			this.solveIncompressibility(numIters, dt);
 
 			this.extrapolate();
+			this.set_bnd();
+
 			this.advectVel(dt);
 			this.advectSmoke(dt);
 		}
@@ -359,6 +388,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		var n = f.numY;
 
 		if (sceneNr == 0) {   		// tank
+			let width = 0.4 * f.numX * f.h;
+			let height = 0.4 * f.numY * f.h;
 
 			for (var i = 0; i < f.numX; i++) {
 				for (var j = 0; j < f.numY; j++) {
@@ -366,11 +397,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 					if (i == 0 || i == f.numX-1 || j == 0)
 						s = 0.0;	// solid
 					f.s[i*n + j] = s
+					if (i * f.h < width-f.h*10 && j * f.h < height-f.h*5)
+						f.m[i*n + j] = 0.0;	// pressure 1.0
+					else
+						f.m[i*n + j] = 1.0;	// no pressure
+
 				}
 			}
-			scene.gravity = -9.81;
+			scene.gravity = 9.81;
 			scene.showPressure = true;
-			scene.showSmoke = false;
+			scene.showSmoke = true;
 			scene.showStreamlines = false;
 			scene.showVelocities = false;
 		}
@@ -380,12 +416,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			for (var i = 0; i < f.numX; i++) {
 				for (var j = 0; j < f.numY; j++) {
 					var s = 1.0;	// fluid
-					if (i == 0 || j == 0 || j == f.numY-1)
+					if (i == 0 || j == 0 || i == f.numX-1)
 						s = 0.0;	// solid
 					f.s[i*n + j] = s
-
 					if (i == 1) {
-						f.u[i*n + j] = inVel;
+						f.v[i*n + j] = inVel;
+					// if (j == f.numY - 2 && i * f.h > 0.25 * domainWidth && i * f.h < 0.75 * domainWidth) {
+					// 	f.v[i*n + j] = -inVel;
 					}
 				}
 			}
@@ -394,8 +431,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			var minJ = Math.floor(0.5 * f.numY - 0.5*pipeH);
 			var maxJ = Math.floor(0.5 * f.numY + 0.5*pipeH);
 
-			for (var j = minJ; j < maxJ; j++)
+			for (var j = minJ; j < maxJ; j++){
 				f.m[j] = 0.0;
+			}
+			
+			// var pipeW = 0.1 * f.numX;
+			// var minI = Math.floor(0.5 * f.numY - 0.5*pipeW);
+			// var maxI = Math.floor(0.5 * f.numY + 0.5*pipeW);
+
+			// for (var i = minI; i < maxI; i++){
+			// 	for(var j = 0; j < n; j++){
+			// 		f.m[i*n+j] = 0.0;
+			// 	}
+			// }
 
 			setObstacle(0.4, 0.5, true)
 
@@ -421,8 +469,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			scene.showStreamlines = false;
 			scene.showVelocities = false;
 			scene.obstacleRadius = 0.1;
-			setObstacle(1, 0.5, true)
-
 		}
 
 		document.getElementById("streamButton").checked = scene.showStreamlines;
@@ -767,17 +813,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			scene.fluid.simulate(scene.dt, scene.gravity, scene.numIters)
 			scene.frameNr++;
 	}
-	textbox = document.getElementById("deltaTimeDisplay");
 
 	function update() {
 		simulate();
 		draw();
-		textbox.innerHTML = "DeltaTime: " + scene.dt.toFixed(4) + "s" + "    (FPS " + (scene.dt > 0 ? 1.0/scene.dt:0).toFixed(1) + ")" + "\n Elapsed Time: " + ((performance.now() - startTime)/1000).toFixed(2) + " s";
 		requestAnimationFrame(update);
 	}
 	
 	setupScene(1);
-	let startTime = performance.now();
 	update();
 	
 </script> 

@@ -65,7 +65,7 @@
             var canvas = document.getElementById("canvas");
             var ctx = canvas.getContext("2d");
             var deltaTimeDisplay = document.getElementById("deltaTime");
-
+            let startTime = performance.now();
             let lastTime = performance.now();
             let currentTime = 0;
             let deltaTime = 0;
@@ -78,7 +78,7 @@
             let playground = new Playground();
 
             // build slider UI bound to playground.simulation properties
-            (function buildControls(){
+            function buildControls(){
                 console.profile("startup");
                 let sim = playground.simulation;
                 let container = document.getElementById('controls');
@@ -126,7 +126,7 @@
                 // ensure initial values from sim are reflected
                 // fire input on each range to set UI text
                 Array.from(container.querySelectorAll('input[type=range]')).forEach(r => r.dispatchEvent(new Event('input')));
-            })();
+            };
 
 
             function updatePlayground(dt){
@@ -135,14 +135,7 @@
                 playground.draw();
             }
 
-            function start(){
-                buildControls();
-                let startTime = performance.now();
-                mainLoop(startTime);
-            }
-
-
-            function mainLoop(startTime){
+            function mainLoop(){
                 window.requestAnimationFrame(mainLoop);
                 currentTime = performance.now();
                 deltaTime = (currentTime - lastTime) /1000; // convert ms to seconds, apply slowdown
@@ -168,8 +161,10 @@
                         let avgDist = nearCount > 0 ? (sumDist / nearCount) : 0;
                         let fps = deltaTime > 0 ? (1.0 / deltaTime) : 0;
 
+                        let elapsedTime = (performance.now()-startTime)/1000;
                         let lines = [];
                         lines.push("Delta Time : " + deltaTime.toFixed(4) + " s    (FPS " + fps.toFixed(1) + ")");
+                        lines.push("Elapesed time: " + elapsedTime.toFixed(3));
                         lines.push("CPU load   : " + cpuLoadEMA.toFixed(1) + "%    (frame " + frameProcTime.toFixed(2) + " ms)");
 
 

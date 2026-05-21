@@ -3,7 +3,7 @@ class Simulation{
         this.particles = [];
         this.particleEmitters = [];
         this.shapes = [];
-        //this.springs = new Map();
+        this.springs = new Map();
 
         this.HEIGHT = 1781;
         this.WIDTH = 712;
@@ -60,12 +60,21 @@ class Simulation{
         }
 
         else if(this.scene === 1){
-            this.instantiateParticles();
-            this.PARTICLE_SIZE = 15;
+
+            this.AMOUNT_PARTICLES = 2000;
+            this.PARTICLE_SIZE = 8;
             this.INTERACTION_RADIUS = this.PARTICLE_SIZE*1.6;
+            this.instantiateParticles();
+            this.BETA = 0.0;
+            this.SIGMA = 0.2;
+            
+            // plasticity parameters
+            this.GAMMA = 0.1;
+            this.PLASTICITY = 0.9;
+            this.SPRING_STIFFNESS = 1;
         }
         else if (this.scene === 2){
-            this.PARTICLE_SIZE = 5;
+            this.PARTICLE_SIZE = 10;
             this.INTERACTION_RADIUS = this.PARTICLE_SIZE*1.6;
             let circle = new Circle(new Vector2(canvas.width/2,canvas.height/2), canvas.height*0.15, "orange");
             this.shapes.push(circle);
@@ -94,7 +103,7 @@ class Simulation{
 
     instantiateParticles(){
         let offset = this.INTERACTION_RADIUS*0.95;
-        let startPos = new Vector2(0, 0);
+        let startPos = new Vector2(0, canvas.height/2);
 
         let xParticles = Math.sqrt(this.AMOUNT_PARTICLES);
         let yParticles = xParticles;
@@ -175,6 +184,9 @@ class Simulation{
 
         this.predictPositions(dt);
 
+        // this.adjustSprings(dt);
+        // this.springDisplacement(dt);
+
         // recompute wall distances on predicted positions (used by density relaxation)
         this.computeWallDistances();
 
@@ -219,6 +231,79 @@ class Simulation{
             }
         }
     }
+
+    adjustSprings(dt){
+        for(let i=0; i< this.particles.length; i++){
+            let neighbours = this.fluidHashGrid.getNeighbourOfParticleIdx(i);
+            let particleA = this.particles[i];
+
+            for(let j = 0; j < neighbours.length;j++){
+				let particleB = this.particles[neighbours[j]];
+				if(particleA == particleB) continue;
+
+                let springId = i + neighbours[j] * this.particles.length;
+
+                if(this.springs.has(springId)){
+                    continue;
+                }
+
+                let rij = Sub(particleB.position,particleA.position); 
+                let q = rij.Length() / this.INTERACTION_RADIUS;
+
+                if(q < 1){
+                    let newSpring = new Spring(i, neighbours[j], this.INTERACTION_RADIUS);
+                    this.springs.set(springId, newSpring);
+                }
+            }
+        }
+
+
+        for(let [key, spring] of this.springs){
+            let pi = this.particles[spring.particleAIdx];
+            let pj = this.particles[spring.particleBIdx];
+
+            let rij = Sub(pi.position, pj.position).Length();
+            let Lij = spring.length;
+            let d = this.GAMMA * Lij;
+
+            if(rij > Lij + d){
+                spring.length += dt * this.PLASTICITY * (rij - Lij - d); // stretching
+
+            }else if(rij < Lij - d){ 
+                spring.length -= dt * this.PLASTICITY * (Lij - d - rij); // compression
+            }
+
+            if(spring.length > this.INTERACTION_RADIUS){
+                this.springs.delete(key);
+            }
+        }
+    }
+
+    springDisplacement(dt){
+        let dtSquared = dt * dt;
+
+        for(let [key, spring] of this.springs){
+            let pi = this.particles[spring.particleAIdx];
+            let pj = this.particles[spring.particleBIdx];
+
+            let rij = Sub(pi.position, pj.position);
+            let distance = rij.Length();
+
+            if(distance < 0.0001){
+                continue;
+            }
+
+            rij.Normalize();
+            let displacementTerm = dtSquared * this.SPRING_STIFFNESS * 
+                (1 - spring.length / this.INTERACTION_RADIUS) * (spring.length - distance);
+
+            rij = Scale(rij, displacementTerm * 0.5);
+
+            pi.position = Add(pi.position, rij);
+            pj.position = Sub(pj.position, rij);
+        }
+    }
+
 
     viscosity(dt){
         for(let i=0; i< this.particles.length; i++){

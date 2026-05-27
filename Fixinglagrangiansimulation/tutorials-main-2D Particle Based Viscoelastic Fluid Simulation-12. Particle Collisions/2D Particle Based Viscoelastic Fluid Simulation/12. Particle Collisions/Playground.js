@@ -7,7 +7,7 @@ class Playground{
     }
 
     update(dt){
-        this.simulation.update(0.16);
+        this.simulation.update(0.25);
     }
 
     draw(){
@@ -28,6 +28,7 @@ class Playground{
 
         if(button === 0){
             this.selectedShape = this.simulation.getShapeAt(this.mousePos);
+            console.log("mousePos: ", this.mousePos);
         }
 
         if(button === 1){

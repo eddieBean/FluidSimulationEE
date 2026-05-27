@@ -621,7 +621,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		}
 		else if (sceneNr == 4) { // dam break (Level-Set multi-phase)
-
+			scene.showObstacle = false;
 			// ---- Solid boundaries: closed tank, open top ----
 			for (var i = 0; i < f.numX; i++) {
 				for (var j = 0; j < f.numY; j++) {
@@ -1005,6 +1005,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		switch(event.key) {
 			case 'p': scene.paused = !scene.paused; break;
 			case 'm': scene.paused = false; simulate(); scene.paused = true; break;
+			case 'e': downloadCSV(); break;  // Press 'e' to export CSV
 		}
 	});
 
@@ -1018,25 +1019,117 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		scene.paused = !scene.paused;
 	}
 
-	// main -------------------------------------------------------
+	// Logging with memory and CPU stats
+	let logBuffer = [];
+	let frameStartTime = 0;
+	let currentMemoryMB = 0;
 
+	async function getMemoryStats() {
+		try {
+			// Use measureUserAgentSpecificMemory for accurate dynamic memory measurement
+			if (performance.measureUserAgentSpecificMemory) {
+				const result = await performance.measureUserAgentSpecificMemory();
+				return {
+					usedMemoryMB: (result.bytes / 1048576).toFixed(2),
+					breakdown: result.breakdown.map(item => ({
+						attribution: item.attribution[0]?.url || 'Unknown',
+						bytes: (item.bytes / 1048576).toFixed(2)
+					}))
+				};
+			}
+		} catch (e) {
+			console.warn('measureUserAgentSpecificMemory not available or denied:', e.message);
+		}
+
+		// Fallback to performance.memory if available
+		if (performance.memory) {
+			return {
+				usedMemoryMB: (performance.memory.usedJSHeapSize / 1048576).toFixed(2),
+				breakdown: [{ attribution: 'JS Heap', bytes: (performance.memory.usedJSHeapSize / 1048576).toFixed(2) }]
+			};
+		}
+
+		return { usedMemoryMB: 'N/A', breakdown: [] };
+	}
+
+	function getCPULoad() {
+		// Estimate CPU load based on frame time vs ideal frame time
+		// For 60 FPS, ideal frame time is ~16.67ms
+		const idealFrameTime = 16.67;
+		const cpuLoad = Math.min(100, (scene.dt * 1000 / idealFrameTime) * 100).toFixed(1);
+		return cpuLoad;
+	}
+
+	async function logToCSV() {
+		const frameGenTime = (performance.now() - frameStartTime).toFixed(2); // actual frame generation time in ms
+		const memStats = await getMemoryStats();
+		currentMemoryMB = memStats.usedMemoryMB;
+		const cpuLoad = getCPULoad();
+		const elapsedTime = ((performance.now() - startTime) / 1000).toFixed(2);
+		const fps = (scene.dt > 0 ? 1.0 / scene.dt : 0).toFixed(1);
+		
+		const logEntry = [
+			scene.frameNr,
+			scene.dt.toFixed(4),
+			fps,
+			cpuLoad,
+			frameGenTime,
+			memStats.usedMemoryMB,
+			elapsedTime
+		].join(',');
+		
+		logBuffer.push(logEntry);
+	}
+
+	function downloadCSV() {
+		if (logBuffer.length === 0) {
+			alert('No log data to export');
+			return;
+		}
+
+		// Create CSV header
+		const header = 'Frame,DeltaTime(s),FPS,CPULoad(%),FrameGenTime(ms),UsedMemory(MB),TotalElapsed(s)';
+		const csvContent = [header, ...logBuffer].join('\n');
+
+		// Create and download file
+		const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+		const link = document.createElement('a');
+		const url = URL.createObjectURL(blob);
+		link.setAttribute('href', url);
+		link.setAttribute('download', `fluid_sim_log_${Date.now()}.csv`);
+		link.style.visibility = 'hidden';
+		document.body.appendChild(link);
+		link.click();
+		document.body.removeChild(link);
+
+		console.log(`CSV exported with ${logBuffer.length} entries`);
+	}
+
+	// main -------------------------------------------------------
+	let flag = true;
 	function simulate() 
 	{
-		if (!scene.paused)
+		if (!scene.paused){
 			scene.fluid.simulate(scene.dt, scene.gravity, scene.numIters)
 			scene.frameNr++;
+			flag = true;
+		}else{
+			console.log(logBuffer.join('\n'));
+			flag = false;
+		}
 	}
 
 	textbox = document.getElementById("deltaTimeDisplay");
 
-	function update() {
+	async function update() {
+		frameStartTime = performance.now();  // Start timing the frame
 		simulate();
 		draw();
-		textbox.innerHTML = "DeltaTime: " + scene.dt.toFixed(4) + "s" + "    (FPS " + (scene.dt > 0 ? 1.0/scene.dt:0).toFixed(1) + ")" + "\n Elapsed Time: " + ((performance.now() - startTime)/1000).toFixed(2) + " s";
+		await logToCSV();	
 		requestAnimationFrame(update);
 	}
 	
-	setupScene(1);
+	setupScene(4);
 	let startTime = performance.now();
 	update();
 	

@@ -83,6 +83,37 @@ class Simulation{
             console.log("Particles instantiated: " + this.particles.length);
         }
         this.fluidHashGrid.initialize(this.particles);
+        
+        if (this.scene === 3){
+            // Scene 3: Particle emitter dropping particles onto two rectangles
+            this.PARTICLE_SIZE = 5;
+            this.INTERACTION_RADIUS = this.PARTICLE_SIZE * 1.6;
+            this.GRAVITY = new Vector2(0, 15);
+            this.VELOCITY_DAMPING = 0.98;
+            
+            // Create particle emitter at top center
+            this.emitter = this.createParticleEmitter(
+                new Vector2(canvas.width / 2, 20),  // position at top center
+                new Vector2(0, 1),                   // direction downward
+                canvas.width / 50,                    // size (spread width)
+                0.1,                                 // spawn interval
+                25,                                  // amount per spawn
+                0                                    // initial speed (gravity will pull down)
+            );
+            
+            // Create two rectangles to catch particles
+            const rectWidth = canvas.width / 4;
+            const rectHeight = 30;
+            const leftRectX = canvas.width / 4 - rectWidth / 2;
+            const rightRectX = (3 * canvas.width) / 4 - rectWidth / 2;
+            const rectY = (2 * canvas.height) / 3;
+            
+            let leftRect = new Rectangle(leftRectX, rectY, rectWidth, rectHeight, "steelblue");
+            let rightRect = new Rectangle(rightRectX, rectY, rectWidth, rectHeight, "steelblue");
+            
+            this.shapes.push(leftRect);
+            this.shapes.push(rightRect);
+        }
 
     }
 
@@ -162,7 +193,7 @@ class Simulation{
             p.nearWall = (minDist < this.INTERACTION_RADIUS);
         }
     }
-
+    
     update(dt){
         this.neighbourSearch();
 
@@ -184,8 +215,8 @@ class Simulation{
 
         this.predictPositions(dt);
 
-        // this.adjustSprings(dt);
-        // this.springDisplacement(dt);
+        this.adjustSprings(dt);
+        this.springDisplacement(dt);
 
         // recompute wall distances on predicted positions (used by density relaxation)
         this.computeWallDistances();

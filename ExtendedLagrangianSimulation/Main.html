@@ -60,21 +60,20 @@
         <script src="shapes/Shape.js"></script>
         <script src="shapes/Polygon.js"></script>
         <script src="shapes/Circle.js"></script>
+        <script src="shapes/Rectangle.js"></script>
         <script src="WheresMyWaterSimulation.js"></script>
 
         <script>
             var canvas = document.getElementById("canvas");
             var ctx = canvas.getContext("2d");
-            var deltaTimeDisplay = document.getElementById("deltaTime");
-            let startTime = performance.now();
-            let lastTime = performance.now();
-            let currentTime = 0;
-            let deltaTime = 0;
-            // CPU/memory diagnostics
-            let frameProcTime = 0; // ms spent in update+draw
-            let cpuLoadEMA = 0; // exponential moving average of CPU load %
-            const cpuAlpha = 0.12;
-            const targetFrameMs = 1000.0 / 60.0;
+            var textbox = document.getElementById("deltaTime");
+            
+            // Logging system global state
+            let logBuffer = [];                 // Array storing CSV rows (strings)
+            let frameStartTime = 0;             // Timestamp marking start of current frame
+            let currentMemoryMB = 0;            // Cache of latest memory measurement
+            let startTime = 0;                  // Page load/simulation start timestamp
+            let isPaused = false;               // Pause/resume state
 
             let playground = new Playground();
 
@@ -132,52 +131,127 @@
 
             function updatePlayground(dt){
                 Clear();
-                playground.update(dt);
+                playground.update(0.016);
                 playground.draw();
             }
 
-            function mainLoop(){
-                window.requestAnimationFrame(mainLoop);
-                currentTime = performance.now();
-                deltaTime = (currentTime - lastTime) /1000; // convert ms to seconds, apply slowdown
-                updatePlayground(deltaTime);
-
-                     // measure how long the update+draw take (frame CPU usage estimate)
-                        let procStart = performance.now();
-                        let procEnd = performance.now();
-                        frameProcTime = procEnd - procStart;
-                        let cpuLoad = Math.min(100, (frameProcTime / targetFrameMs) * 100);
-                        cpuLoadEMA = cpuAlpha * cpuLoad + (1 - cpuAlpha) * cpuLoadEMA;
-
-                    // collect diagnostics from the simulation
-                    try{
-                        let sim = playground.simulation;
-                        let particles = sim.particles.length;
-                        let nearCount = 0;
-                        let sumDist = 0;
-                        for(let i=0;i<sim.particles.length;i++){
-                            let p = sim.particles[i];
-                            if(p.nearWall){ nearCount++; sumDist += Math.max(0, p.wallDist || 0); }
-                        }
-                        let avgDist = nearCount > 0 ? (sumDist / nearCount) : 0;
-                        let fps = deltaTime > 0 ? (1.0 / deltaTime) : 0;
-
-                        let elapsedTime = (performance.now()-startTime)/1000;
-                        let lines = [];
-                        lines.push("Delta Time : " + deltaTime.toFixed(4) + " s    (FPS " + fps.toFixed(1) + ")");
-                        lines.push("Elapesed time: " + elapsedTime.toFixed(3));
-                        lines.push("CPU load   : " + cpuLoadEMA.toFixed(1) + "%    (frame " + frameProcTime.toFixed(2) + " ms)");
-
-
-                        lines.push("Particles  : " + particles + "    Near wall: " + nearCount);
-                        lines.push("Avg wallDist: " + avgDist.toFixed(3));
-                        deltaTimeDisplay.value = lines.join('\n');
-                    }catch(e){
-                        // fallback to simple display 
-                        deltaTimeDisplay.value = "Delta Time: " + deltaTime.toFixed(4) + "s";
+            /**
+             * Get memory statistics using measureUserAgentSpecificMemory() with fallback
+             */
+            async function getMemoryStats() {
+                try {
+                    if (performance.measureUserAgentSpecificMemory) {
+                        const estimate = await performance.measureUserAgentSpecificMemory();
+                        const usedMemoryMB = (estimate.bytes / 1024 / 1024).toFixed(2);
+                        const breakdown = estimate.breakdown.map(item => ({
+                            attribution: item.attribution || 'Unknown',
+                            bytes: (item.bytes / 1024 / 1024).toFixed(2)
+                        }));
+                        return { usedMemoryMB, breakdown };
+                    } else if (performance.memory) {
+                        // Fallback to performance.memory (Chrome/Edge only)
+                        const usedMemoryMB = (performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(2);
+                        return { usedMemoryMB, breakdown: [] };
+                    } else {
+                        // No API available
+                        console.warn('Memory measurement API not available');
+                        return { usedMemoryMB: 'N/A', breakdown: [] };
                     }
+                } catch (e) {
+                    console.warn('Error measuring memory:', e.message);
+                    return { usedMemoryMB: 'N/A', breakdown: [] };
+                }
+            }
 
-                    lastTime = currentTime;
+            /**
+             * Calculate CPU load as percentage relative to 60 FPS target
+             */
+            function getCPULoad() {
+                const sim = playground.simulation;
+                if (!sim || !sim.dt) return 0;
+                const targetFrameMs = 1000.0 / 60.0;  // 16.67ms for 60 FPS
+                const cpuLoad = Math.min(100, (sim.dt * 1000 / targetFrameMs) * 100);
+                return cpuLoad.toFixed(1);
+            }
+
+            /**
+             * Log current frame data to CSV buffer
+             */
+            async function logToCSV() {
+                const sim = playground.simulation;
+                if (!sim) return;
+
+                // Calculate frame generation time
+                const frameGenTime = performance.now() - frameStartTime;
+                
+                // Get memory stats (async operation)
+                const memStats = await getMemoryStats();
+                currentMemoryMB = memStats.usedMemoryMB;
+                
+                // Calculate metrics
+                const cpuLoad = getCPULoad();
+                const elapsedTime = (performance.now() - startTime) / 1000;
+                const fps = sim.dt > 0 ? (1.0 / sim.dt).toFixed(1) : 0;
+                
+                // Construct CSV row
+                const frameNum = logBuffer.length;
+                const deltaTimeStr = sim.dt ? sim.dt.toFixed(4) : '0.0000';
+                const csvRow = `${frameNum},${deltaTimeStr},${fps},${cpuLoad},${frameGenTime.toFixed(2)},${currentMemoryMB},${elapsedTime.toFixed(2)}`;
+                
+                logBuffer.push(csvRow);
+            }
+
+            /**
+             * Download CSV data from logBuffer
+             */
+            function downloadCSV() {
+                if (logBuffer.length === 0) {
+                    alert('No data to export. Run the simulation first.');
+                    return;
+                }
+
+                const header = 'Frame,DeltaTime(s),FPS,CPULoad(%),FrameGenTime(ms),UsedMemory(MB),TotalElapsed(s)';
+                const csvContent = header + '\n' + logBuffer.join('\n');
+                
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.setAttribute('href', url);
+                link.setAttribute('download', `lagrangian_sim_log_${Date.now()}.csv`);
+                link.style.visibility = 'hidden';
+                
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                URL.revokeObjectURL(url);
+                console.log(`CSV exported successfully with ${logBuffer.length} entries.`);
+            }
+
+            async function mainLoop(){
+                window.requestAnimationFrame(mainLoop);
+                
+                if (isPaused) {
+                    return;
+                }
+
+                frameStartTime = performance.now();
+                updatePlayground(0.016);  // Fixed timestep for now
+                
+                // Log frame data (async operation)
+                try {
+                    await logToCSV();
+                } catch (e) {
+                    console.warn('Error logging frame data:', e);
+                }
+
+                // Update on-screen display
+                const sim = playground.simulation;
+                if (textbox && sim) {
+                    const fps = sim.dt > 0 ? (1.0 / sim.dt).toFixed(1) : '0.0';
+                    const frameGenTime = performance.now() - frameStartTime;
+                    textbox.value = `Frame: ${sim.frameNr || 0} | FPS: ${fps} | Memory: ${currentMemoryMB}MB | FrameTime: ${frameGenTime.toFixed(2)}ms | Logged Frames: ${logBuffer.length}`;
+                }
             }
 
             function Clear(){
@@ -193,6 +267,30 @@
                     y: evt.clientY - rect.top
                 };
             }
+
+            // Initialize start time when page loads
+            document.addEventListener('DOMContentLoaded', function() {
+                startTime = performance.now();
+                buildControls();
+                console.log('Logging system initialized. Press "e" to export CSV, "p" to pause/resume, "m" to step one frame.');
+            });
+
+            // Keyboard event handler for pause, step, and export
+            document.addEventListener('keydown', function(evt) {
+                if (evt.key === 'e' || evt.key === 'E') {
+                    downloadCSV();
+                } else if (evt.key === 'p' || evt.key === 'P') {
+                    isPaused = !isPaused;
+                    console.log(isPaused ? 'Simulation paused' : 'Simulation resumed');
+                } else if (evt.key === 'm' || evt.key === 'M') {
+                    if (isPaused) {
+                        frameStartTime = performance.now();
+                        updatePlayground(0.016);
+                        logToCSV().catch(e => console.warn('Error in single step:', e));
+                        console.log('Single frame stepped');
+                    }
+                }
+            });
 
             canvas.addEventListener('mousemove', function(evt){
                 let mouse = getMousePos(canvas,evt);

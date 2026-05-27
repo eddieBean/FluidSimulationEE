@@ -35,6 +35,7 @@ class Simulation{
 
         this.fluidHashGrid = new FluidHashGrid(this.INTERACTION_RADIUS);
         this.instantiateParticles();
+
         this.fluidHashGrid.initialize(this.particles);
         this.D = this.PARTICLE_SIZE*10;
         this.REYNOLDS_NUMBER = (this.INFLOW_VELOCITY*this.D);
@@ -232,9 +233,7 @@ handleOneWayCoupling(){
     }
 
     inflowVelocityEnforcement(){
-        
         const inletWidth = 50;
-
         for(let i=0; i< this.particles.length; i++) {
             if (this.particles[i].position.x < 0) {
             this.particles[i].velocity = new Vector2(this.INFLOW_VELOCITY, 0);

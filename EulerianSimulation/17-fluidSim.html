@@ -48,10 +48,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	
 <body>
 
+    <button class="button" onclick="setupScene(0)">Tank</button>
 	<button class="button" onclick="setupScene(1)">Wind Tunnel</button>
+    <button class="button" onclick="setupScene(2)">Paint</button>
 	<button class="button" onclick="setupScene(3)">Hires Tunnel</button>
-	<button class="button" onclick="setupScene(0)">Tank</button>
-	<button class="button" onclick="setupScene(2)">Paint</button>
+
+
 	<input type = "checkbox" id = "streamButton" onclick = "scene.showStreamlines = !scene.showStreamlines">Streamlines
 	<input type = "checkbox" id = "velocityButton" onclick = "scene.showVelocities = !scene.showVelocities">Velocities
 	<input type = "checkbox" name = "field" id = "pressureButton" onclick = "scene.showPressure = !scene.showPressure;"> Pressure
@@ -307,7 +309,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			this.advectSmoke(dt);
 		}
 	}
-
+// SCENE SETUP INFORMATION
 	var scene = 
 	{
 		gravity : -9.81,
@@ -317,7 +319,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		overRelaxation : 1.9,
 		obstacleX : 0.0,
 		obstacleY : 0.0,
-		obstacleRadius: 0.15,
+		obstacleRadius: 0.25,
 		paused: false,
 		sceneNr: 0,
 		showObstacle: false,
@@ -375,7 +377,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		}
 		else if (sceneNr == 1 || sceneNr == 3) { // vortex shedding
 
-			var inVel = 2.0;
+			var inVel = 5.0;
 			for (var i = 0; i < f.numX; i++) {
 				for (var j = 0; j < f.numY; j++) {
 					var s = 1.0;	// fluid
@@ -411,9 +413,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			}
 
 		}
+        // THE ONE WE CARE ABOUT
 		else if (sceneNr == 2) { // paint
 
-			scene.gravity = 0.0;
+			scene.gravity = 0;
 			scene.overRelaxation = 1.0;
 			scene.showPressure = false;
 			scene.showSmoke = true;
@@ -756,6 +759,17 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		scene.paused = !scene.paused;
 	}
 
+    const path = require('path');
+    const fs = requrire('fs');
+
+    const logFilePath = path.join("__dirname",'log.csv')
+
+    function logToCSV(rowData){
+        const csvRow = rowData.join(',')+'\n';
+        fs.appendFileSync(logFilePath,csvRow,'utf8')
+    }
+
+
 	// main -------------------------------------------------------
 
 	function simulate() 
@@ -767,12 +781,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 	function update() {
 		simulate();
+        let log = []
+        logToCSV();
 		draw();
 		requestAnimationFrame(update);
 	}
 	
 	setupScene(1);
 	update();
+
+
 	
 </script> 
 </body>

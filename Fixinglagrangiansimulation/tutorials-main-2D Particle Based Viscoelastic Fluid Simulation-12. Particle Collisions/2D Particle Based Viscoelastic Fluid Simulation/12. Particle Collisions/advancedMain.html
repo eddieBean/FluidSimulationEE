@@ -44,7 +44,7 @@
     <body>
         <div>
             <canvas id="canvas" width="1781px" height="712px" style="border: solid 1px black"></canvas>
-            <button id="startSimulation" onClick="mainLoop()">Start Simulation</button>
+            <button id="startSimulation" onClick="init()">Start Simulation</button>
             <div id="controls" style="position:static"></div>
             <textarea id="deltaTime" style="position:static" readonly></textarea>
         </div>
@@ -71,10 +71,15 @@
             let frameStartTime = 0;             // Timestamp marking start of current frame
             let currentMemoryMB = 0;            // Cache of latest memory measurement
             let startTime = 0;                  // Page load/simulation start timestamp
+            let frameNr = 0;                    // Frame counter
+            let elapsedTime = 0;                  // Total elapsed time since start
             let isPaused = false;               // Pause/resume state
-
+            let lastTime = performance.now();
             let playground = new Playground();
-
+            function init(){
+                startTime = performance.now();
+                mainLoop();
+            }
             // build slider UI bound to playground.simulation properties
             function buildControls(){
                 console.profile("startup");
@@ -178,7 +183,6 @@
             async function logToCSV() {
                 const sim = playground.simulation;
                 if (!sim) return;
-
                 // Calculate frame generation time
                 const frameGenTime = performance.now() - frameStartTime;
                 
@@ -192,7 +196,7 @@
                 const fps = sim.dt > 0 ? (1.0 / sim.dt).toFixed(1) : 0;
                 
                 // Construct CSV row
-                const frameNum = logBuffer.length;
+                const frameNum = sim.frame|| logBuffer.length;
                 const deltaTimeStr = sim.dt ? sim.dt.toFixed(4) : '0.0000';
                 const csvRow = `${frameNum},${deltaTimeStr},${fps},${cpuLoad},${frameGenTime.toFixed(2)},${currentMemoryMB},${elapsedTime.toFixed(2)}`;
                 
@@ -225,31 +229,25 @@
                 URL.revokeObjectURL(url);
                 console.log(`CSV exported successfully with ${logBuffer.length} entries.`);
             }
-
+            
             async function mainLoop(){
                 window.requestAnimationFrame(mainLoop);
-                
-                if (isPaused) {
-                    return;
-                }
-
-                frameStartTime = performance.now();
-                updatePlayground(0.016);  // Fixed timestep for now
-                
-                // Log frame data (async operation)
+                currentTime = performance.now();
+                deltaTime = (currentTime - lastTime) / 1000;
+                updatePlayground(deltaTime);
                 try {
                     await logToCSV();
                 } catch (e) {
                     console.warn('Error logging frame data:', e);
                 }
-
                 // Update on-screen display
                 const sim = playground.simulation;
                 if (textbox && sim) {
-                    const fps = sim.dt > 0 ? (1.0 / sim.dt).toFixed(1) : '0.0';
-                    const frameGenTime = performance.now() - frameStartTime;
-                    textbox.value = `Frame: ${sim.frameNr || 0} | FPS: ${fps} | Memory: ${currentMemoryMB}MB | FrameTime: ${frameGenTime.toFixed(2)}ms | Logged Frames: ${logBuffer.length}`;
+                    const fps = sim.dt > 0 ? (1.0 / deltaTime).toFixed(1) : '0.0';
+                    const frameGenTime = performance.now() - currentTime;
+                    textbox.value = `Frame: ${sim.frameNr || 0} Elapsed: ${((performance.now() - startTime) / 1000).toFixed(2)}| FPS: ${fps} | Memory: ${currentMemoryMB}MB | deltaTime: ${frameGenTime.toFixed(2)}ms | Logged Frames: ${logBuffer.length}`;
                 }
+                lastTime = currentTime;
             }
 
             function Clear(){
@@ -269,7 +267,7 @@
             // Initialize start time when page loads
             document.addEventListener('DOMContentLoaded', function() {
                 startTime = performance.now();
-                buildControls();
+                //buildControls();
                 console.log('Logging system initialized. Press "e" to export CSV, "p" to pause/resume, "m" to step one frame.');
             });
 

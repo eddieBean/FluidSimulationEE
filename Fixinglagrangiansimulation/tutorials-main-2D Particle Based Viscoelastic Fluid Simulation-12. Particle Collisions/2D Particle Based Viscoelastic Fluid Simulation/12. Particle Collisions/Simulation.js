@@ -7,7 +7,7 @@ class Simulation{
 
 
         this.AMOUNT_PARTICLES = 2000;
-        this.VELOCITY_DAMPING = 0.99;
+        this.VELOCITY_DAMPING = 1;
         this.GRAVITY = new Vector2(0,1);
         this.REST_DENSITY = 10;
         this.K_NEAR = 3;
@@ -71,19 +71,16 @@ class Simulation{
         let offsetAllParticles = new Vector2(0,712);
 
         let xParticles = Math.sqrt(this.AMOUNT_PARTICLES);
-        let yParticles = offsetAllParticles.y-xParticles;
+        let yParticles = xParticles;
 
 
         for(let x=0; x< xParticles; x++){
-            for(let y=offsetAllParticles.y; y> yParticles; y--){
+            for(let y=0; y< yParticles; y++){
                 let position = new Vector2(
                     x*offsetBetweenParticles + offsetAllParticles.x,
-                    y*offsetBetweenParticles + offsetAllParticles.y);
+                    offsetAllParticles.y - y*offsetBetweenParticles);
 
                 let particle = new Particle(position);
-                //particle.velocity = Scale(new Vector2(-0.5 + Math.random(),-0.5 + Math.random()), 200);
-
-
                 this.particles.push(particle);
             }
         }

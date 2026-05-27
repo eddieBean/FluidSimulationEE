@@ -34,6 +34,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			}
 			.slider {
 				-webkit-appearance: none;
+				appearance: none;
 				width: 80px;
 				height: 6px;
 				border-radius: 5px;
@@ -48,20 +49,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	
 <body>
 
-    <button class="button" onclick="setupScene(0)">Tank</button>
 	<button class="button" onclick="setupScene(1)">Wind Tunnel</button>
-    <button class="button" onclick="setupScene(2)">Paint</button>
 	<button class="button" onclick="setupScene(3)">Hires Tunnel</button>
-
-
+	<button class="button" onclick="setupScene(0)">Tank</button>
+	<button class="button" onclick="setupScene(2)">Paint</button>
+	<button class="button" onclick="setupScene(4)">Dam Break</button>
 	<input type = "checkbox" id = "streamButton" onclick = "scene.showStreamlines = !scene.showStreamlines">Streamlines
 	<input type = "checkbox" id = "velocityButton" onclick = "scene.showVelocities = !scene.showVelocities">Velocities
 	<input type = "checkbox" name = "field" id = "pressureButton" onclick = "scene.showPressure = !scene.showPressure;"> Pressure
 	<input type = "checkbox" name = "field" id = "smokeButton" onclick = "scene.showSmoke = !scene.showSmoke;" checked>Smoke
 	<input type = "checkbox" id = "overrelaxButton" onclick = "scene.overRelaxation = scene.overRelaxation == 1.0 ? 1.9 : 1.0" checked>Overrelax
 	<br>
-	<canvas id="myCanvas" style="border:2px solid"></canvas>
-	
+	<canvas id="myCanvas" width="1781px" height="712px" style="border:2px solid"></canvas>
+	<p id = "deltaTimeDisplay"></p>
 <script>
 
 	var canvas = document.getElementById("myCanvas");
@@ -106,8 +106,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			this.s = new Float32Array(this.numCells);
 			this.m = new Float32Array(this.numCells);
 			this.newM = new Float32Array(this.numCells);
-			this.m.fill(1.0)
+			this.m.fill(1.0);
 			var num = numX * numY;
+
+			// --- Level-Set additions ---
+			// phi: signed distance field (phi<0 = water, phi>0 = air, phi=0 = interface)
+			this.phi    = new Float32Array(this.numCells);
+			this.newPhi = new Float32Array(this.numCells);
+			// rho: spatially varying density computed from phi
+			this.rho    = new Float32Array(this.numCells);
+			this.rhoW   = 1000.0;   // water density  (kg/m^3)
+			this.rhoA   = 1.225;    // air density    (kg/m^3)
+			this.rho.fill(this.rhoW);
+			// flag: enables level-set pipeline in simulate()
+			this.useLevelSet = false;
 		}
 
 		integrate(dt, gravity) {
@@ -123,7 +135,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		solveIncompressibility(numIters, dt) {
 
 			var n = this.numY;
-			var cp = this.density * this.h / dt;
+			var cp = this.density * this.h / dt;   // used by constant-density path
 
 			for (var iter = 0; iter < numIters; iter++) {
 
@@ -145,14 +157,44 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 						var div = this.u[(i+1)*n + j] - this.u[i*n + j] + 
 							this.v[i*n + j+1] - this.v[i*n + j];
 
-						var p = -div / s;
-						p *= scene.overRelaxation;
-						this.p[i*n + j] += cp * p;
+						if (this.useLevelSet) {
+							// --- Density-weighted pressure projection (Eq. 16) ---
+							// Each face uses the average density of its two adjacent cells.
+							// Divergence-free condition becomes:
+							//   sum_face( dt / (rho_face * h) ) * dp = -div
+							// so:
+							//   dp = -div / ( (dt/h) * sum_face(sx/rho_face) )
+							// Velocity correction at each face:
+							//   du = sx * dt * dp / (rho_face * h)
+							var rho_x0 = 0.5 * (this.rho[(i-1)*n + j] + this.rho[i*n + j]);
+							var rho_x1 = 0.5 * (this.rho[i*n + j]     + this.rho[(i+1)*n + j]);
+							var rho_y0 = 0.5 * (this.rho[i*n + j-1]   + this.rho[i*n + j]);
+							var rho_y1 = 0.5 * (this.rho[i*n + j]     + this.rho[i*n + j+1]);
 
-						this.u[i*n + j] -= sx0 * p;
-						this.u[(i+1)*n + j] += sx1 * p;
-						this.v[i*n + j] -= sy0 * p;
-						this.v[i*n + j+1] += sy1 * p;
+							var s_eff = sx0 / rho_x0 + sx1 / rho_x1
+							          + sy0 / rho_y0 + sy1 / rho_y1;
+							if (s_eff == 0.0) continue;
+
+							var dp = -div / (dt / this.h * s_eff);
+							dp *= scene.overRelaxation;
+							this.p[i*n + j] += dp;
+
+							this.u[i*n + j]       -= sx0 * dt * dp / (rho_x0 * this.h);
+							this.u[(i+1)*n + j]   += sx1 * dt * dp / (rho_x1 * this.h);
+							this.v[i*n + j]       -= sy0 * dt * dp / (rho_y0 * this.h);
+							this.v[i*n + j+1]     += sy1 * dt * dp / (rho_y1 * this.h);
+
+						} else {
+							// --- Original constant-density projection ---
+							var p = -div / s;
+							p *= scene.overRelaxation;
+							this.p[i*n + j] += cp * p;
+
+							this.u[i*n + j]       -= sx0 * p;
+							this.u[(i+1)*n + j]   += sx1 * p;
+							this.v[i*n + j]       -= sy0 * p;
+							this.v[i*n + j+1]     += sy1 * p;
+						}
 					}
 				}
 			}
@@ -288,14 +330,148 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 						var y = j*h + h2 - dt*v;
 
 						this.newM[i*n + j] = this.sampleField(x,y, S_FIELD);
- 					}
+ 				}
 				}	 
 			}
 			this.m.set(this.newM);
 		}
 
-		// ----------------- end of simulator ------------------------------
+		// -------------------------------------------------------------------------
+		// Level-Set methods
+		// -------------------------------------------------------------------------
 
+		// Regularised Heaviside (Eq. 13): smoothly transitions 0→1 over ±eps band.
+		//   H = 0  for phi < -eps  (pure water)
+		//   H = 1  for phi >  eps  (pure air)
+		//   smooth blend in between
+		heaviside(phi) {
+			var eps = 1.5 * this.h;
+			if (phi < -eps) return 0.0;
+			if (phi >  eps) return 1.0;
+			return 0.5 * (1.0 + phi / eps + (1.0 / Math.PI) * Math.sin(Math.PI * phi / eps));
+		}
+
+		// Recompute spatially-varying density from the current level-set field.
+		// rho(phi) = rhoW*(1-H) + rhoA*H   (Eq. 9)
+		updateDensity() {
+			for (var k = 0; k < this.numCells; k++) {
+				var H = this.heaviside(this.phi[k]);
+				this.rho[k] = this.rhoW * (1.0 - H) + this.rhoA * H;
+			}
+		}
+
+		// Semi-Lagrangian advection of the level-set field phi (Eq. 7).
+		// Mirrors advectSmoke but operates on phi with cell-centred interpolation.
+		advectPhi(dt) {
+			this.newPhi.set(this.phi);
+
+			var n  = this.numY;
+			var h  = this.h;
+			var h1 = 1.0 / h;
+			var h2 = 0.5 * h;
+
+			for (var i = 1; i < this.numX-1; i++) {
+				for (var j = 1; j < this.numY-1; j++) {
+
+					if (this.s[i*n + j] == 0.0) continue;
+
+					// Cell-centred velocity
+					var u = (this.u[i*n + j] + this.u[(i+1)*n + j]) * 0.5;
+					var v = (this.v[i*n + j] + this.v[i*n + j+1]) * 0.5;
+
+					// Back-trace to departure point
+					var x = i*h + h2 - dt*u;
+					var y = j*h + h2 - dt*v;
+
+					// Clamp to valid cell-centre region
+					x = Math.max(Math.min(x, this.numX*h), h);
+					y = Math.max(Math.min(y, this.numY*h), h);
+
+					// Bilinear interpolation of phi at (x,y)  (same stencil as S_FIELD)
+					var x0 = Math.min(Math.floor((x - h2) * h1), this.numX-1);
+					var tx = ((x - h2) - x0*h) * h1;
+					var x1 = Math.min(x0 + 1, this.numX-1);
+
+					var y0 = Math.min(Math.floor((y - h2) * h1), this.numY-1);
+					var ty = ((y - h2) - y0*h) * h1;
+					var y1 = Math.min(y0 + 1, this.numY-1);
+
+					var sx = 1.0 - tx;
+					var sy = 1.0 - ty;
+
+					this.newPhi[i*n + j] =
+						sx*sy * this.phi[x0*n + y0] +
+						tx*sy * this.phi[x1*n + y0] +
+						tx*ty * this.phi[x1*n + y1] +
+						sx*ty * this.phi[x0*n + y1];
+				}
+			}
+			this.phi.set(this.newPhi);
+		}
+
+		// Re-distance phi so that |∇phi| ≈ 1 everywhere (Eq. 14).
+		// Uses Sussman-style PDE redistancing with Godunov upwind differencing.
+		// Cells straddling the interface (a neighbour has opposite sign) are frozen;
+		// all other fluid cells are iterated toward the true signed distance.
+		redistancePhi() {
+			var n    = this.numY;
+			var h    = this.h;
+			var dtau = 0.5 * h;          // pseudo-time step
+			var numIters = 10;            // a few sweeps suffice each frame
+
+			for (var iter = 0; iter < numIters; iter++) {
+
+				// Jacobi step: read from this.phi, write updates to this.newPhi
+				this.newPhi.set(this.phi);
+
+				for (var i = 1; i < this.numX-1; i++) {
+					for (var j = 1; j < this.numY-1; j++) {
+
+						var idx = i*n + j;
+						if (this.s[idx] == 0.0) continue;
+
+						var phi = this.phi[idx];
+						var px0 = this.phi[(i-1)*n + j];
+						var px1 = this.phi[(i+1)*n + j];
+						var py0 = this.phi[i*n + j-1];
+						var py1 = this.phi[i*n + j+1];
+
+						// Freeze cells that straddle the interface — they already
+						// carry a good approximation of the signed distance.
+						if (px0*phi <= 0.0 || px1*phi <= 0.0 ||
+						    py0*phi <= 0.0 || py1*phi <= 0.0)
+							continue;
+
+						var sgn = phi > 0.0 ? 1.0 : -1.0;
+
+						// Godunov upwind finite differences
+						var ax = (phi - px0) / h;   // backward x
+						var bx = (px1 - phi) / h;   // forward  x
+						var ay = (phi - py0) / h;   // backward y
+						var by = (py1 - phi) / h;   // forward  y
+
+						var Dx, Dy;
+						if (sgn > 0.0) {
+							// Outside (phi > 0): upwind toward increasing phi
+							Dx = Math.max( Math.max(ax, 0.0), -Math.min(bx, 0.0) );
+							Dy = Math.max( Math.max(ay, 0.0), -Math.min(by, 0.0) );
+						} else {
+							// Inside (phi < 0): upwind toward decreasing phi
+							Dx = Math.max( -Math.min(ax, 0.0), Math.max(bx, 0.0) );
+							Dy = Math.max( -Math.min(ay, 0.0), Math.max(by, 0.0) );
+						}
+
+						var gradMag = Math.sqrt(Dx*Dx + Dy*Dy);
+
+						// ∂φ/∂τ = sign(φ₀) · (1 − |∇φ|)
+						this.newPhi[idx] = phi - dtau * sgn * (gradMag - 1.0);
+					}
+				}
+				this.phi.set(this.newPhi);
+			}
+		}
+
+		// ----------------- end of simulator ------------------------------
 
 		simulate(dt, gravity, numIters) {
 
@@ -306,10 +482,27 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 			this.extrapolate();
 			this.advectVel(dt);
-			this.advectSmoke(dt);
+
+			if (this.useLevelSet) {
+				// Level-set pipeline (Algorithm 1)
+				this.advectPhi(dt);           // move interface with velocity
+				this.redistancePhi();         // restore |∇phi| = 1
+				this.updateDensity();         // refresh rho from new phi
+
+				// Sync m from phi for the existing renderer:
+				//   phi < 0  → water → m = 0 (renders black)
+				//   phi >= 0 → air   → m = 1 (renders white)
+				//   s == 0   → wall  → m keeps 0.5 set at init (renders grey)
+				for (var k = 0; k < this.numCells; k++) {
+					if (this.s[k] != 0.0)
+						this.m[k] = this.phi[k] < 0.0 ? 0.0 : 1.0;
+				}
+			} else {
+				this.advectSmoke(dt);
+			}
 		}
 	}
-// SCENE SETUP INFORMATION
+
 	var scene = 
 	{
 		gravity : -9.81,
@@ -319,7 +512,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		overRelaxation : 1.9,
 		obstacleX : 0.0,
 		obstacleY : 0.0,
-		obstacleRadius: 0.25,
+		obstacleRadius: 0.15,
 		paused: false,
 		sceneNr: 0,
 		showObstacle: false,
@@ -345,6 +538,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			res = 50;
 		else if (sceneNr == 3)
 			res = 200;
+		else if (sceneNr == 4)
+			res = 100;   // dam break — enough resolution without being too slow
 
 		var domainHeight = 1.0;
 		var domainWidth = domainHeight / simHeight * simWidth;
@@ -377,7 +572,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		}
 		else if (sceneNr == 1 || sceneNr == 3) { // vortex shedding
 
-			var inVel = 5.0;
+			var inVel = 2.0;
 			for (var i = 0; i < f.numX; i++) {
 				for (var j = 0; j < f.numY; j++) {
 					var s = 1.0;	// fluid
@@ -413,16 +608,80 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			}
 
 		}
-        // THE ONE WE CARE ABOUT
 		else if (sceneNr == 2) { // paint
 
-			scene.gravity = 0;
-			scene.overRelaxation = 1.0;
+			scene.gravity = 0.0;
+			scene.overRelaxation = 1.9;
 			scene.showPressure = false;
 			scene.showSmoke = true;
 			scene.showStreamlines = false;
 			scene.showVelocities = false;
 			scene.obstacleRadius = 0.1;
+			setObstacle(1, 0.5, true)
+
+		}
+		else if (sceneNr == 4) { // dam break (Level-Set multi-phase)
+
+			// ---- Solid boundaries: closed tank, open top ----
+			for (var i = 0; i < f.numX; i++) {
+				for (var j = 0; j < f.numY; j++) {
+					var s = 1.0;
+					if (i == 0 || i == f.numX-1 || j == 0)
+						s = 0.0;   // left wall, right wall, floor
+					f.s[i*n + j] = s;
+					// Colour walls grey in the smoke render so they're visible
+					if (s == 0.0) f.m[i*n + j] = 0.5;
+				}
+			}
+
+			// ---- Initialise phi as the SDF of the water rectangle (Eq. 6) ----
+			// Water occupies the left ~35 % of the tank up to ~65 % of its height.
+			var x0w = f.h;                           // left  edge of water (just inside wall)
+			var x1w = f.numX * f.h * 0.35;           // right edge of water (the "dam")
+			var y0w = f.h;                           // bottom of water (just above floor)
+			var y1w = f.numY * f.h * 0.65;           // top of water
+
+			for (var i = 0; i < f.numX; i++) {
+				for (var j = 0; j < f.numY; j++) {
+					var cx = (i + 0.5) * f.h;
+					var cy = (j + 0.5) * f.h;
+
+					var inside = (cx > x0w && cx < x1w && cy > y0w && cy < y1w);
+					if (inside) {
+						// Negative SDF inside water: distance to nearest face, negated
+						var d = Math.min(
+							cx - x0w,   // distance to left face
+							x1w - cx,   // distance to right face (the dam wall)
+							cy - y0w,   // distance to bottom face
+							y1w - cy    // distance to top face
+						);
+						f.phi[i*n + j] = -d;
+					} else {
+						// Positive SDF outside water: Euclidean distance to rectangle
+						var ddx = Math.max(x0w - cx, cx - x1w, 0.0);
+						var ddy = Math.max(y0w - cy, cy - y1w, 0.0);
+						f.phi[i*n + j] = Math.sqrt(ddx*ddx + ddy*ddy);
+					}
+				}
+			}
+
+			// ---- Activate level-set pipeline ----
+			f.useLevelSet = true;
+			f.updateDensity();
+
+			// ---- Initialise smoke field from phi for first-frame rendering ----
+			for (var k = 0; k < f.numCells; k++) {
+				if (f.s[k] != 0.0)
+					f.m[k] = f.phi[k] < 0.0 ? 0.0 : 1.0;
+			}
+
+			scene.gravity         = -9.81;
+			scene.dt              = 1.0 / 60.0;
+			scene.numIters        = 80;     // more iters for large density ratio
+			scene.showPressure    = false;
+			scene.showSmoke       = true;
+			scene.showStreamlines = false;
+			scene.showVelocities  = false;
 		}
 
 		document.getElementById("streamButton").checked = scene.showStreamlines;
@@ -759,17 +1018,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		scene.paused = !scene.paused;
 	}
 
-    const path = require('path');
-    const fs = requrire('fs');
-
-    const logFilePath = path.join("__dirname",'log.csv')
-
-    function logToCSV(rowData){
-        const csvRow = rowData.join(',')+'\n';
-        fs.appendFileSync(logFilePath,csvRow,'utf8')
-    }
-
-
 	// main -------------------------------------------------------
 
 	function simulate() 
@@ -779,18 +1027,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			scene.frameNr++;
 	}
 
+	textbox = document.getElementById("deltaTimeDisplay");
+
 	function update() {
 		simulate();
-        let log = []
-        logToCSV();
 		draw();
+		textbox.innerHTML = "DeltaTime: " + scene.dt.toFixed(4) + "s" + "    (FPS " + (scene.dt > 0 ? 1.0/scene.dt:0).toFixed(1) + ")" + "\n Elapsed Time: " + ((performance.now() - startTime)/1000).toFixed(2) + " s";
 		requestAnimationFrame(update);
 	}
 	
 	setupScene(1);
+	let startTime = performance.now();
 	update();
-
-
 	
 </script> 
 </body>
